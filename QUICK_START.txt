@@ -1,0 +1,82 @@
+┌─────────────────────────────────────────────────────────────────┐
+│                 Hussam Clinic - Quick Start Guide               │
+│             تطبيق عيادة حسام - دليل البدء السريع              │
+└─────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════
+✅ الخطوة الأولى - First Step
+═══════════════════════════════════════════════════════════════════
+
+    انقر مرتين على الملف:
+    Double click on the file:
+    
+    ► run_app.bat
+    
+    سيقوم بـ:
+    It will:
+    ✓ تنظيف البيانات القديمة (Clean old data)
+    ✓ تحميل المكتبات (Load libraries)
+    ✓ بناء التطبيق (Build app)
+    ✓ تشغيل التطبيق (Run app)
+
+═══════════════════════════════════════════════════════════════════
+⚙️ الخيارات الإضافية - Additional Options
+═══════════════════════════════════════════════════════════════════
+
+1️⃣ تشغيل التطبيق مباشرة (Run app directly):
+   Double-click on:
+   ► build\windows\x64\runner\Release\hussam_clinc.exe
+
+2️⃣ تشغيل عند بدء الكمبيوتر (Auto-start on boot):
+   Double-click on:
+   ► create_startup_shortcut.bat
+
+3️⃣ تشغيل عبر PowerShell (من المتقدمين):
+   Run this command:
+   ► powershell -ExecutionPolicy Bypass -File run_app.ps1
+
+═══════════════════════════════════════════════════════════════════
+🐛 حل المشاكل - Troubleshooting
+═══════════════════════════════════════════════════════════════════
+
+المشكلة: لا يظهر شيء بعد النقر على run_app.bat
+Problem: Nothing appears after clicking run_app.bat
+
+الحل:
+Solution:
+1. تأكد من وجود Flutter مثبت (Make sure Flutter is installed)
+   في Terminal اكتب: flutter --version
+   
+2. تأكد من Windows 10 أو أحدث مع .NET Framework
+   Make sure Windows 10+ with .NET Framework
+   
+3. جرب التشغيل من Terminal مباشرة:
+   Try running from Terminal directly:
+   
+   cd D:\programms\hussam
+   flutter pub get
+   flutter build windows --release
+
+═══════════════════════════════════════════════════════════════════
+📋 المتطلبات - Requirements
+═══════════════════════════════════════════════════════════════════
+
+✓ Windows 10 أو أحدث
+✓ Flutter SDK مثبت
+✓ Visual Studio C++ (للبناء)
+✓ 500MB مساحة حرة على القرص
+
+═══════════════════════════════════════════════════════════════════
+ℹ️ ملاحظات مهمة - Important Notes  
+═══════════════════════════════════════════════════════════════════
+
+• أول تشغيل قد يستغرق دقائق (First run may take minutes)
+• تأكد من اتصال الإنترنت (Ensure internet connection)
+• لا تغلق النافذة أثناء البناء (Don't close window during build)
+• إذا حدث خطأ، جرب run_app.bat مرة أخرى
+
+═══════════════════════════════════════════════════════════════════
+💬 تاريخ الإنشاء - Created: 2026-02-24
+📧 للدعم - For Support: Check the logs or contact admin
+
+═══════════════════════════════════════════════════════════════════

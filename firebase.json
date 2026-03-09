@@ -1,0 +1,36 @@
+{
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "hossamclinic-5193a",
+          "appId": "1:656268601844:android:0250938cde779c20edf1a1",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "hossamclinic-5193a",
+          "configurations": {
+            "android": "1:656268601844:android:0250938cde779c20edf1a1",
+            "windows": "1:656268601844:web:86988e09adb2a5dbedf1a1"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+Analyzing test_props.dart...
+
+  error - test_props.dart:7:15 - The getter 'start' isn't defined for the type 'TimeRange'. Try importing the library that defines 'start', correcting the name to the name of an existing getter, or defining a getter or field named 'start'. - undefined_getter
+  error - test_props.dart:8:15 - The getter 'end' isn't defined for the type 'TimeRange'. Try importing the library that defines 'end', correcting the name to the name of an existing getter, or defining a getter or field named 'end'. - undefined_getter
+  error - test_props.dart:11:15 - The getter 'min' isn't defined for the type 'TimeRange'. Try importing the library that defines 'min', correcting the name to the name of an existing getter, or defining a getter or field named 'min'. - undefined_getter
+  error - test_props.dart:12:15 - The getter 'max' isn't defined for the type 'TimeRange'. Try importing the library that defines 'max', correcting the name to the name of an existing getter, or defining a getter or field named 'max'. - undefined_getter
+   info - test_props.dart:2:8 - The imported package 'time' isn't a dependency of the importing package. Try adding a dependency for 'time' in the 'pubspec.yaml' file. - depend_on_referenced_packages
+   info - test_props.dart:6:3 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - test_props.dart:7:3 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - test_props.dart:8:3 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - test_props.dart:9:3 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - test_props.dart:10:3 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - test_props.dart:11:3 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - test_props.dart:12:3 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+
+12 issues found.
