@@ -2,6 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:hussam_clinc/db/accounting/vouchers/dbvouchers.dart';
 import 'package:hussam_clinc/model/accounting/VoucherModel.dart';
 import 'package:hussam_clinc/theme/app_theme.dart';
+import 'package:syncfusion_flutter_datagrid/datagrid.dart';
+import 'package:syncfusion_flutter_core/theme.dart';
+import '../../../datasource/vouchersReview_datasource.dart';
+import 'package:hussam_clinc/pages/accounting/vouchers/receiptVoucher.dart';
+import 'package:hussam_clinc/global_var/globals.dart';
+import 'package:hussam_clinc/main.dart';
 
 class ReceiptVouchersReview extends StatefulWidget {
   final String type; // 'قبض' or 'صرف'
@@ -14,10 +20,13 @@ class ReceiptVouchersReview extends StatefulWidget {
 class _ReceiptVouchersReviewState extends State<ReceiptVouchersReview> {
   List<VoucherModel> _items = [];
   final DbVouchers _db = DbVouchers();
+  late VouchersReviewDataSource _vouchersDataSource;
 
   @override
   void initState() {
     super.initState();
+    _vouchersDataSource = VouchersReviewDataSource(
+        vouchersData: [], onDelete: (ctx, id) => _confirmDelete(ctx, id));
     _load();
   }
 
@@ -27,13 +36,37 @@ class _ReceiptVouchersReviewState extends State<ReceiptVouchersReview> {
         "SELECT * FROM vouchers WHERE voucher_class='${widget.type}';");
     setState(() {
       _items = res.map((e) => VoucherModel.fromMap(e)).toList();
+      _vouchersDataSource = VouchersReviewDataSource(
+          vouchersData: _items, onDelete: (ctx, id) => _confirmDelete(ctx, id));
     });
   }
 
-  Future<void> _delete(int id) async {
-    final db = await _db.dbHelper.openDb();
-    await db!.rawDelete('DELETE FROM vouchers WHERE voucher_id=?', [id]);
-    await _load();
+  Future<void> _confirmDelete(BuildContext context, int id) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('تأكيد الحذف'),
+        content: const Text('هل أنت متأكد من حذف هذا الإيصال؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c, false),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text(
+              'حذف',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      final db = await _db.dbHelper.openDb();
+      await db!.rawDelete('DELETE FROM vouchers WHERE voucher_id=?', [id]);
+      await _load();
+    }
   }
 
   @override
@@ -50,6 +83,31 @@ class _ReceiptVouchersReviewState extends State<ReceiptVouchersReview> {
                 : 'مراجعة إيصالات الصرف',
             style: const TextStyle(fontSize: 22, color: Colors.white),
           ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline, color: Colors.white),
+              tooltip: 'إضافة إيصال',
+              onPressed: () async {
+                VMGlobal.MaxNoS();
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ReceiptVoucherPage(
+                      type: widget.type,
+                    ),
+                  ),
+                );
+                await _load();
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh, color: Colors.white),
+              tooltip: 'تحديث البيانات',
+              onPressed: () async {
+                await _load();
+              },
+            ),
+          ],
         ),
         body: _items.isEmpty
             ? Center(
@@ -62,224 +120,87 @@ class _ReceiptVouchersReviewState extends State<ReceiptVouchersReview> {
                       color: Colors.grey[400],
                     ),
                     const SizedBox(height: 16),
-                    Text(
-                      'لا توجد إيصالات',
-                      style: TextStyle(
-                        fontSize: 18,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
+                    const Text('لا توجد إيصالات'),
                   ],
                 ),
               )
-            : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _items.length,
-                itemBuilder: (ctx, i) {
-                  final it = _items[i];
-                  return _buildVoucherCard(it);
-                },
+            : SfDataGridTheme(
+                data: SfDataGridThemeData(headerColor: const Color(0xff009889)),
+                child: SfDataGrid(
+                  selectionMode: SelectionMode.single,
+                  allowColumnsResizing: true,
+                  allowFiltering: true,
+                  navigationMode: GridNavigationMode.cell,
+                  columnWidthMode: ColumnWidthMode.auto,
+                  allowSorting: true,
+                  source: _vouchersDataSource,
+                  columns: _buildColumns(),
+                ),
               ),
       ),
     );
   }
 
-  Widget _buildVoucherCard(VoucherModel voucher) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            begin: Alignment.topRight,
-            end: Alignment.bottomLeft,
-            colors: [
-              Colors.white,
-              Colors.grey[50]!,
-            ],
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'الإيصال',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.blueGrey,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        voucher.className,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      const Text(
-                        'التاريخ والوقت',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.blueGrey,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${voucher.date} ${voucher.time}',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.primaryColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              const Divider(height: 1),
-              const SizedBox(height: 16),
-              // Details
-              Row(
-                children: [
-                  Expanded(
-                    flex: 1,
-                    child: _buildDetailItem(
-                      icon: Icons.pin_outlined,
-                      label: 'رقم الحساب',
-                      value: voucher.account,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: _buildDetailItem(
-                      icon: Icons.person_outline,
-                      label: 'الطرف',
-                      value: voucher.dealer,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              _buildDetailItem(
-                icon: Icons.monetization_on_outlined,
-                label: 'المبلغ',
-                value: '${voucher.payment} ${voucher.className}',
-                valueColor: AppTheme.accentColor,
-              ),
-              if (voucher.discription.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                _buildDetailItem(
-                  icon: Icons.note_outlined,
-                  label: 'ملاحظات',
-                  value: voucher.discription,
-                ),
-              ],
-              const SizedBox(height: 12),
-              // Action buttons
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton.icon(
-                    onPressed: () async {
-                      final ok = await showDialog<bool>(
-                        context: context,
-                        builder: (c) => AlertDialog(
-                          title: const Text('تأكيد الحذف'),
-                          content:
-                              const Text('هل أنت متأكد من حذف هذا الإيصال؟'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(c, false),
-                              child: const Text('إلغاء'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(c, true),
-                              child: const Text(
-                                'حذف',
-                                style: TextStyle(color: Colors.red),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (ok == true) {
-                        await _delete(voucher.id);
-                      }
-                    },
-                    label: const Text('حذف'),
-                    icon: const Icon(Icons.delete_outline_rounded),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.red,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+  List<GridColumn> _buildColumns() {
+    return [
+      GridColumn(
+        columnName: 'id',
+        label: Container(alignment: Alignment.center, child: const Text('#')),
       ),
-    );
-  }
-
-  Widget _buildDetailItem({
-    required IconData icon,
-    required String label,
-    required String value,
-    Color? valueColor,
-  }) {
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: Colors.blueGrey),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: Colors.blueGrey,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: valueColor ?? Colors.black87,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
+      GridColumn(
+        columnName: 'date',
+        label: Container(
+            alignment: Alignment.center, child: const Text('التاريخ')),
+      ),
+      GridColumn(
+        columnName: 'time',
+        label:
+            Container(alignment: Alignment.center, child: const Text('الوقت')),
+      ),
+      GridColumn(
+        columnName: 'account',
+        label: Container(
+            alignment: Alignment.center, child: const Text('رقم الحساب')),
+      ),
+      GridColumn(
+        columnName: 'dealer',
+        label:
+            Container(alignment: Alignment.center, child: const Text('الاسم')),
+      ),
+      GridColumn(
+        columnName: 'patient_link',
+        label: Container(
+            alignment: Alignment.center, child: const Text('ملف المريض')),
+      ),
+      GridColumn(
+        columnName: 'journal',
+        label: Container(
+            alignment: Alignment.center, child: const Text('رقم القيد')),
+      ),
+      GridColumn(
+        columnName: 'payment',
+        label:
+            Container(alignment: Alignment.center, child: const Text('المبلغ')),
+      ),
+      GridColumn(
+        columnName: 'currency',
+        label:
+            Container(alignment: Alignment.center, child: const Text('العملة')),
+      ),
+      GridColumn(
+        columnName: 'class',
+        label: Container(
+            alignment: Alignment.center, child: const Text('نوع السند')),
+      ),
+      GridColumn(
+        columnName: 'description',
+        label: Container(
+            alignment: Alignment.center, child: const Text('الملاحظات')),
+      ),
+      GridColumn(
+        columnName: '_delete',
+        label: Container(alignment: Alignment.center, child: const Text('حذف')),
+      ),
+    ];
   }
 }

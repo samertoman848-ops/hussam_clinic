@@ -46,11 +46,18 @@ class DbInvoices {
     return queryResult.map((e) => InvoicesModel.fromMap(e)).toList();
   }
 
+  Future<List<InvoicesModel>> getInvoicesByAccount(String accountNo) async {
+    Database? db = await dbHelper.openDb();
+    if (db == null) return [];
+    String sql = 'SELECT * from invoices WHERE invoice_account_no=?';
+    final List<Map<String, Object?>> queryResult = await db.rawQuery(sql, [accountNo]);
+    return queryResult.map((e) => InvoicesModel.fromMap(e)).toList();
+  }
+
   Future<InvoicesModel> FindInvioce(String id) async {
     Database? db = await dbHelper.openDb();
-    String sql = "";
-    sql = 'SELECT * from invoices WHERE invoice_id=$id ';
-    final List<Map<String, Object?>> queryResult = await db!.rawQuery(sql);
+    const sql = 'SELECT * from invoices WHERE invoice_id = ?';
+    final List<Map<String, Object?>> queryResult = await db!.rawQuery(sql, [id]);
     return InvoicesModel.fromMap(queryResult.first);
   }
   // CREATE TABLE "journals" (
@@ -120,12 +127,8 @@ class DbInvoices {
       return;
     }
 
-    String Sql =
-        'INSERT INTO invoices (invoice_rate, invoice_date, invoice_time, invoice_account_no, invoice_account_name, invoice_accountingTo_no, invoice_accountingTo_name, invoice_amount, invoice_disscount, invoice_amount_all, invoice_currency, invoice_payment, invoice_payment_currency, invoice_remaining, invoice_jornal, invoice_discription, invoice_class) VALUES ';
-    Sql = Sql +
-        '("$rate","$date","$time","$account_no","$account_name","$accountingTo_no", "$accountingTo_name","$amount","$disscount","$amount_all","$currency","$payment","$payment_currency","$remaining","$jornal","","$type");';
     Database? db = await dbHelper.openDb();
-    await db!.execute(Sql);
+    await db!.insert("invoices", model.toMap());
     
     FirebaseSyncService.instance.pushInvoice(model);
   }
@@ -177,15 +180,12 @@ class DbInvoices {
     }
 
     Database? db = await dbHelper.openDb();
-    String sql =
-        'UPDATE invoices SET invoice_rate="$rate",invoice_date="$date",invoice_time="$time",invoice_account_no="$account_no",invoice_account_name="$account_name"';
-    sql = sql +
-        ' ,invoice_accountingTo_no="$accountingTo_no" ,invoice_accountingTo_name="$accountingTo_name" ,invoice_amount="$amount" ,invoice_disscount="$disscount" ';
-    sql = sql +
-        ' ,invoice_amount_all="$amount_all" ,invoice_currency="$currency" ,invoice_payment="$payment" ,invoice_payment_currency="$payment_currency"  ,invoice_remaining="$remaining" ';
-    sql = sql +
-        ' ,invoice_jornal="$jornal"  ,invoice_discription="$discription"  ,invoice_class="$type"  WHERE invoice_id="$id"';
-    await db!.rawQuery(sql);
+    await db!.update(
+      "invoices",
+      model.toMap(),
+      where: "invoice_id = ?",
+      whereArgs: [id],
+    );
 
     FirebaseSyncService.instance.pushInvoice(model);
   }
@@ -193,10 +193,89 @@ class DbInvoices {
   Future<void> deleteInvoice(String id) async {
     Database? db = await dbHelper.openDb();
     if (db == null) return;
-    // delete invoice details first
+    
+    // تحويل الـ id للتأكد من توافقيته مع قاعدة البيانات التي تطلبه كـ Integer رقم
+    int? parsedId = int.tryParse(id);
+    if (parsedId == null) return;
+    
+    // إيجاد رقم القيد المرتبط بالفاتورة
+    final invoice = await db.rawQuery('SELECT invoice_jornal FROM invoices WHERE invoice_id = ?', [parsedId]);
+    if (invoice.isNotEmpty) {
+      final String journalId = invoice.first['invoice_jornal'].toString();
+      // حذف القيد وتفاصيله
+      if (journalId.isNotEmpty && journalId != 'null') {
+        await db.rawDelete('DELETE FROM journals WHERE journal_id = ?', [journalId]);
+        await db.rawDelete('DELETE FROM journals_detail WHERE JD_journal_id = ?', [journalId]);
+        // حذف الإيصالات المرافقة للقيد
+        await db.rawDelete('DELETE FROM vouchers WHERE voucher_journal = ?', [journalId]);
+      }
+    }
+
+    // حذف أصناف الفاتورة
     await db.rawDelete(
-        'DELETE FROM invoices_detail WHERE ID_invoices_id = ?', [id]);
-    // delete the invoice
-    await db.rawDelete('DELETE FROM invoices WHERE invoice_id = ?', [id]);
+        'DELETE FROM invoices_detail WHERE ID_invoices_id = ?', [parsedId]);
+    // حذف الفاتورة الأساسية
+    await db.rawDelete('DELETE FROM invoices WHERE invoice_id = ?', [parsedId]);
+    
+    if (kIsWeb) {
+      // إزالة من مزامنة فايربيس لو كانت مفعلة مستقبلاً
+    }
+  }
+
+  Future<void> addInvoicesWithDetails(InvoicesModel model) async {
+    if (kIsWeb) {
+      await FirebaseSyncService.instance.syncInvoice(model);
+      for (var d in model.details) {
+        await FirebaseSyncService.instance.syncInvoiceDetail(d);
+      }
+      return;
+    }
+    Database? db = await dbHelper.openDb();
+    if (db == null) return;
+
+    await db.transaction((txn) async {
+      await txn.insert("invoices", model.toMap());
+      for (var detail in model.details) {
+        await txn.insert("invoices_detail", detail.toMap());
+      }
+    });
+
+    FirebaseSyncService.instance.pushInvoice(model);
+    for (var d in model.details) {
+      FirebaseSyncService.instance.pushInvoiceDetail(d);
+    }
+  }
+
+  Future<void> updateInvoicesWithDetails(InvoicesModel model) async {
+    if (kIsWeb) {
+      await FirebaseSyncService.instance.syncInvoice(model);
+      for (var d in model.details) {
+        await FirebaseSyncService.instance.syncInvoiceDetail(d);
+      }
+      return;
+    }
+    Database? db = await dbHelper.openDb();
+    if (db == null) return;
+
+    await db.transaction((txn) async {
+      await txn.update(
+        "invoices",
+        model.toMap(),
+        where: "invoice_id = ?",
+        whereArgs: [model.id],
+      );
+
+      await txn.delete("invoices_detail",
+          where: "ID_invoices_id = ?", whereArgs: [model.id]);
+
+      for (var detail in model.details) {
+        await txn.insert("invoices_detail", detail.toMap());
+      }
+    });
+
+    FirebaseSyncService.instance.pushInvoice(model);
+    for (var d in model.details) {
+      FirebaseSyncService.instance.pushInvoiceDetail(d);
+    }
   }
 }

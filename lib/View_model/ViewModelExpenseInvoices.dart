@@ -4,11 +4,12 @@ import 'package:intl/intl.dart' as tt;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hussam_clinc/db/accounting/invoices/dbinvoicedetails.dart';
-import 'package:hussam_clinc/db/accounting/journal/dbjournaldetails.dart';
 import 'package:hussam_clinc/db/accounting/journal/dbjournals.dart';
 import 'package:hussam_clinc/model/accounting/invoices/InvoicesDetailModel.dart';
 import 'package:hussam_clinc/db/accounting/invoices/dbinvoices.dart';
 import 'package:hussam_clinc/db/accounting/vouchers/dbvouchers.dart';
+import 'package:hussam_clinc/model/accounting/journals/journalsModel.dart';
+import 'package:hussam_clinc/model/accounting/journals/JournalsDetailModel.dart';
 import '../main.dart';
 import '../model/accounting/invoices/InvoicesModel.dart';
 
@@ -198,6 +199,29 @@ class ViewModelExpenseInvoices {
   late PlutoGridStateManager stateManager;
   List<String> persons = [];
 
+  void calculateTotals() {
+    amount = 0;
+    // Check if stateManager is initialized is not directly possible for late fields without catch
+    // but we can skip if it throws
+    try {
+      if (stateManager.rows.isEmpty) return;
+    } catch (e) {
+      return;
+    }
+
+    for (var e in stateManager.rows) {
+      final val = e.cells['total']?.value;
+      if (val is num) {
+        amount += val.toDouble();
+      } else if (val is String) {
+        amount += double.tryParse(val) ?? 0.0;
+      }
+    }
+
+    amount_all = amount - disscount;
+    remaining = amount_all - (payment + payment_app);
+  }
+
   void selecedId(String value) {
     if (AccountingGroups_select == 'المرضي') {
       for (var e in allAccountingCoustmers) {
@@ -289,8 +313,9 @@ class ViewModelExpenseInvoices {
     ]);
   }
 
-  void EditeAlreadyInvoices(String id) {
-    dbInvoices.FindInvioce(id).then((value) {
+  Future<void> EditeAlreadyInvoices(String id) async {
+    try {
+      final value = await dbInvoices.FindInvioce(id);
       dateDate = DateTime.parse(value.date);
       Selectedtime = TimeOfDay.fromDateTime(dateDate);
       AccountingTo_select_id = value.accountingTo_no;
@@ -300,7 +325,7 @@ class ViewModelExpenseInvoices {
       currencySelect = value.currency;
       rate = double.parse(value.rate);
       amount = double.parse(value.amount); //'قيمة الفاتورة'
-      disscount = double.parse(value.disscount); //'قيمة الخصم
+      disscount = double.parse(value.disscount); //'قيمة الخصم'
       amount_all = double.parse(value.amount_all); //'قيمة الفاتورة الكلية'
       payment = double.parse(value.payment); //المدفوع
       payment_pre = payment;
@@ -310,10 +335,11 @@ class ViewModelExpenseInvoices {
       EditeMode = true;
       saving = true;
       invoicesModelEdite = value;
+      MaxInvoices = value.id.toString();
       Maxjournals = value.jornal;
-    });
-    rows.clear();
-    dbInvoicesDetails.searchInvoicesDetails(id).then((invoicesDetails) {
+
+      rows.clear();
+      final invoicesDetails = await dbInvoicesDetails.searchInvoicesDetails(id);
       for (var invoicesDetail in invoicesDetails) {
         rows.add(
           PlutoRow(
@@ -322,222 +348,335 @@ class ViewModelExpenseInvoices {
               'id_invoice': PlutoCell(value: invoicesDetail.invoices_id),
               'id_item': PlutoCell(value: invoicesDetail.item_no),
               'name': PlutoCell(value: invoicesDetail.item_name),
-              'qty': PlutoCell(value: invoicesDetail.unit_qty),
-              'price': PlutoCell(value: invoicesDetail.unit_price),
-              'total': PlutoCell(value: invoicesDetail.net_price),
+              'qty': PlutoCell(value: num.tryParse(invoicesDetail.unit_qty) ?? 1),
+              'price': PlutoCell(value: num.tryParse(invoicesDetail.unit_price) ?? 0),
+              'total': PlutoCell(value: num.tryParse(invoicesDetail.net_price) ?? 0),
             },
           ),
         );
       }
-    });
+      print('تم تحميل ${rows.length} صنف');
+    } catch (e) {
+      print('خطأ في تحميل الفاتورة: $e');
+    }
   }
 
-  void AddNewInvoices() {
-    /// add jornals
-    /// the record is not  execces you must add new record
+  Future<void> AddNewInvoices() async {
+    if (AccountingPerson_select_name == 'o') return;
 
-    /// add Custmer Journal Details
+    DbInvoices dbInvoices = DbInvoices();
+    DbVouchers dbVouchers = DbVouchers();
+    DbJournals dbJournals = DbJournals();
 
-    if (AccountingPerson_select_name == 'o') {
-    } else {
-      DbInvoices dbInvoices = DbInvoices();
-      DbJournalDetails dbJournalDetails = DbJournalDetails();
-      DbVouchers dbVouchers = DbVouchers();
-      DbJournals dbJournals = DbJournals();
-      DbInvoicesDetails dbInvoicesDetails = DbInvoicesDetails();
-      InvoicesDetailModel invoicesDetailModel = InvoicesDetailModel.name();
+    try {
+      saving = true;
 
-      ///jounral
-      dbJournals.addjournals(
-        dateDate.toString(),
-        '${Selectedtime.hour}:${Selectedtime.minute}',
-        numberFormat.format(amount_all),
-        payment_currency,
-        numberFormat.format(rate),
-        ' فاتورة شراء رقم $MaxInvoices / $AccountingPerson_select_name',
+      // 1. Create main Journal entry
+      final journalMaster = JournalsModel.fromMap({
+        'journal_id': int.tryParse(Maxjournals) ?? 0,
+        'journal_date': dateDate.toString(),
+        'journal_time': '${Selectedtime.hour}:${Selectedtime.minute}',
+        'journal_amount': numberFormat.format(amount_all),
+        'journal_currency': payment_currency,
+        'journal_rate': numberFormat.format(rate),
+        'journal_description': ' فاتورة شراء رقم $MaxInvoices / $AccountingPerson_select_name',
+      });
+
+      // 2. Prepare Journal Details
+      if (remaining > 0) {
+        journalMaster.details.add(JournalsDetailModel.fromMap({
+          'JD_id': 0,
+          'JD_journal_id': Maxjournals,
+          'JD_account_id': AccountingPerson_select_id,
+          'JD_account_name': AccountingPerson_select_name,
+          'JD_debit': "0",
+          'JD_credit': numberFormat.format(remaining),
+          'JD_description': ' فاتورة شراء رقم $MaxInvoices / $AccountingPerson_select_name',
+          'JD_currency': currencySelect,
+          'JD_rate': rate.toString(),
+          'JD_acc_amount': numberFormat.format(rate * remaining),
+        }));
+      }
+
+      if (amount_all >= 0) {
+        journalMaster.details.add(JournalsDetailModel.fromMap({
+          'JD_id': 0,
+          'JD_journal_id': Maxjournals,
+          'JD_account_id': "51",
+          'JD_account_name': "المشتريات",
+          'JD_debit': numberFormat.format(amount_all),
+          'JD_credit': "0",
+          'JD_description': ' فاتورة شراء رقم $MaxInvoices / $AccountingPerson_select_name',
+          'JD_currency': currencySelect,
+          'JD_rate': rate.toString(),
+          'JD_acc_amount': numberFormat.format(amount_all),
+        }));
+      }
+
+      if (payment > 0) {
+        journalMaster.details.add(JournalsDetailModel.fromMap({
+          'JD_id': 0,
+          'JD_journal_id': Maxjournals,
+          'JD_account_id': AccountingTo_select_id,
+          'JD_account_name': AccountingTo_select_name,
+          'JD_debit': "0",
+          'JD_credit': numberFormat.format(payment),
+          'JD_description': ' إيصال صرف (كاش) $MaxVouchers / $AccountingPerson_select_name',
+          'JD_currency': currencySelect,
+          'JD_rate': rate.toString(),
+          'JD_acc_amount': numberFormat.format(rate * payment),
+        }));
+
+        await dbVouchers.addVouchers(
+            AccountingPerson_select_id,
+            dateDate.toString(),
+            '${Selectedtime.hour}:${Selectedtime.minute}',
+            AccountingPerson_select_name,
+            numberFormat.format(payment),
+            payment_currency,
+            Maxjournals,
+            ' إيصال صرف (كاش) $MaxVouchers / $AccountingPerson_select_name',
+            "صرف");
+      }
+
+      if (payment_app > 0) {
+        journalMaster.details.add(JournalsDetailModel.fromMap({
+          'JD_id': 0,
+          'JD_journal_id': Maxjournals,
+          'JD_account_id': AccountingTo_select_id,
+          'JD_account_name': AccountingTo_select_name,
+          'JD_debit': "0",
+          'JD_credit': numberFormat.format(payment_app),
+          'JD_description': ' إيصال صرف (تطبيق) $MaxVouchers / $AccountingPerson_select_name',
+          'JD_currency': currencySelect,
+          'JD_rate': rate.toString(),
+          'JD_acc_amount': numberFormat.format(rate * payment_app),
+        }));
+
+        await dbVouchers.addVouchers(
+            AccountingPerson_select_id,
+            dateDate.toString(),
+            '${Selectedtime.hour}:${Selectedtime.minute}',
+            AccountingPerson_select_name,
+            numberFormat.format(payment_app),
+            payment_currency,
+            Maxjournals,
+            ' إيصال صرف (تطبيق) $MaxVouchers / $AccountingPerson_select_name',
+            "صرف");
+      }
+
+      // 3. Save Journal with Details
+      await dbJournals.addJournalWithDetails(journalMaster);
+
+      // 4. Prepare Invoice
+      double totalPayment = payment + payment_app;
+      final invoiceMaster = InvoicesModel.full(
+        id: int.tryParse(MaxInvoices) ?? DateTime.now().millisecondsSinceEpoch,
+        rate: rate.toString(),
+        date: dateDate.toString(),
+        time: '${Selectedtime.hour}:${Selectedtime.minute}',
+        accountNo: AccountingPerson_select_id,
+        accountName: AccountingPerson_select_name,
+        accountingToNo: AccountingTo_select_id,
+        accountingToName: AccountingTo_select_name,
+        amount: amount.toString(),
+        disscount: disscount.toString(),
+        amountAll: amount_all.toString(),
+        currency: currencySelect,
+        payment: totalPayment.toString(),
+        paymentCurrency: payment_currency,
+        remaining: remaining.toString(),
+        jornal: Maxjournals,
+        discription: "",
+        type: 'المشتريات',
       );
 
-      /// add Invioces
-      double totalPayment = payment + payment_app;
-      dbInvoices.addInvoices2(
-          rate.toString(),
-          dateDate.toString(),
-          '${Selectedtime.hour}:${Selectedtime.minute}',
-          AccountingPerson_select_id,
-          AccountingPerson_select_name,
-          AccountingTo_select_id,
-          AccountingTo_select_name,
-          amount.toString(),
-          disscount.toString(),
-          amount_all.toString(),
-          currencySelect,
-          totalPayment.toString(),
-          payment_currency,
-          remaining.toString(),
-          Maxjournals,
-          "",
-          'المشتريات');
-
-      /// add first Journals    المتبقي
-      if (remaining > 0) {
-        dbJournalDetails.addjournalDetails(
-            Maxjournals,
-            AccountingPerson_select_id,
-            AccountingPerson_select_name,
-            "0",
-            numberFormat.format(remaining),
-            ' فاتورة شراء رقم $MaxInvoices / $AccountingPerson_select_name',
-            currencySelect,
-            rate.toString(),
-            numberFormat.format(rate * remaining));
-      }
-      if (remaining >= 0) {
-        dbJournalDetails.addjournalDetails(
-            Maxjournals,
-            "51",
-            "المشتريات",
-            numberFormat.format(amount_all),
-            "0",
-            ' فاتورة شراء رقم $MaxInvoices / $AccountingPerson_select_name',
-            currencySelect,
-            rate.toString(),
-            numberFormat.format(amount_all));
-      }
-
-      /// add payment Journals
-      if (payment > 0) {
-        dbJournalDetails.addjournalDetails(
-            Maxjournals,
-            AccountingTo_select_id,
-            AccountingTo_select_name,
-            "0",
-            numberFormat.format(payment),
-            ' إيصال صرف (كاش) $MaxVouchers / $AccountingPerson_select_name',
-            currencySelect,
-            rate.toString(),
-            numberFormat.format(rate * payment));
-        dbVouchers.addVouchers(
-            AccountingPerson_select_id,
-            dateDate.toString(),
-            '${Selectedtime.hour}:${Selectedtime.minute}',
-            AccountingPerson_select_name,
-            numberFormat.format(payment),
-            payment_currency,
-            Maxjournals,
-            ' إيصال صرف (كاش) $MaxVouchers / $AccountingPerson_select_name',
-            "صرف");
-      }
-      if (payment_app > 0) {
-        dbJournalDetails.addjournalDetails(
-            Maxjournals,
-            AccountingTo_select_id,
-            AccountingTo_select_name,
-            "0",
-            numberFormat.format(payment_app),
-            ' إيصال صرف (تطبيق) $MaxVouchers / $AccountingPerson_select_name',
-            currencySelect,
-            rate.toString(),
-            numberFormat.format(rate * payment_app));
-        dbVouchers.addVouchers(
-            AccountingPerson_select_id,
-            dateDate.toString(),
-            '${Selectedtime.hour}:${Selectedtime.minute}',
-            AccountingPerson_select_name,
-            numberFormat.format(payment_app),
-            payment_currency,
-            Maxjournals,
-            ' إيصال صرف (تطبيق) $MaxVouchers / $AccountingPerson_select_name',
-            "صرف");
-      }
-
-      ///
+      // 5. Populate Invoice Items
       for (var e in stateManager.rows) {
-        invoicesDetailModel.invoices_id =
-            e.cells['id_invoice']!.value.toString();
-        invoicesDetailModel.item_no = e.cells['id_item']!.value.toString();
-        invoicesDetailModel.item_name = e.cells['name']!.value;
-        invoicesDetailModel.unit_price = e.cells['price']!.value.toString();
-        invoicesDetailModel.unit_qty = e.cells['qty']!.value.toString();
-        invoicesDetailModel.net_price = e.cells['total']!.value.toString();
-
-        dbInvoicesDetails.addInvoicesDetails2(
-            e.cells['id_invoice']!.value,
-            e.cells['id_item']!.value,
-            e.cells['name']!.value,
-            'وحدة',
-            e.cells['qty']!.value.toString(),
-            e.cells['price']!.value.toString(),
-            e.cells['total']!.value.toString());
+        invoiceMaster.details.add(InvoicesDetailModel.full(
+          id: 0,
+          invoicesId: MaxInvoices,
+          itemNo: e.cells['id_item']!.value.toString(),
+          itemName: e.cells['name']!.value.toString(),
+          unitName: 'وحدة',
+          unitQty: e.cells['qty']!.value.toString(),
+          unitPrice: e.cells['price']!.value.toString(),
+          netPrice: e.cells['total']!.value.toString(),
+        ));
       }
-    }
 
-    ///enf
+      // 6. Save Invoice with Details
+      await dbInvoices.addInvoicesWithDetails(invoiceMaster);
+
+      print('✅ تم إضافة فاتورة المشتريات والقيود بنجاح');
+    } catch (e) {
+      print('❌ خطأ في إضافة الفاتورة: $e');
+    } finally {
+      saving = false;
+    }
   }
 
-  void EditeInvoices(String InvoiceNo) {
-    /// Edite jornals
-    /// Edite Journal Details
-    if (AccountingPerson_select_name == 'o') {
-    } else {
-      DbInvoices dbInvoices = DbInvoices();
-      DbInvoicesDetails dbInvoicesDetails = DbInvoicesDetails();
-      InvoicesDetailModel invoicesDetailModel = InvoicesDetailModel.name();
+  Future<void> EditeInvoices(String InvoiceNo) async {
+    if (AccountingPerson_select_name == 'o') return;
 
-      /// add Invioces
-      dbInvoices.updateInvoices(
-          InvoiceNo,
-          rate.toString(),
-          dateDate.toString(),
-          '${Selectedtime.hour}:${Selectedtime.minute}',
-          AccountingPerson_select_id,
-          AccountingPerson_select_name,
-          AccountingTo_select_id,
-          AccountingTo_select_name,
-          amount.toString(),
-          disscount.toString(),
-          amount_all.toString(),
-          currencySelect,
-          payment.toString(),
-          payment_currency,
-          remaining.toString(),
-          Maxjournals,
-          "",
-          'المشتريات');
+    DbInvoices dbInvoices = DbInvoices();
+    DbVouchers dbVouchers = DbVouchers();
+    DbJournals dbJournals = DbJournals();
 
-      ///
-      for (var e in stateManager.rows) {
-        invoicesDetailModel.id = int.parse(e.cells['id']!.value.toString());
-        invoicesDetailModel.invoices_id =
-            e.cells['id_invoice']!.value.toString();
-        invoicesDetailModel.item_no = e.cells['id_item']!.value.toString();
-        invoicesDetailModel.item_name = e.cells['name']!.value;
-        invoicesDetailModel.unit_price = e.cells['price']!.value.toString();
-        invoicesDetailModel.unit_qty = e.cells['qty']!.value.toString();
-        invoicesDetailModel.net_price = e.cells['total']!.value.toString();
-        if (invoicesDetailModel.id > 0) {
-          dbInvoicesDetails.UpdateInvoicesDetails(
-              e.cells['id']!.value.toString(),
-              e.cells['id_invoice']!.value,
-              e.cells['id_item']!.value,
-              e.cells['name']!.value,
-              'وحدة',
-              e.cells['qty']!.value.toString(),
-              e.cells['price']!.value.toString(),
-              e.cells['total']!.value.toString());
-        } else {
-          dbInvoicesDetails.addInvoicesDetails2(
-              e.cells['id_invoice']!.value,
-              e.cells['id_item']!.value,
-              e.cells['name']!.value,
-              'وحدة',
-              e.cells['qty']!.value.toString(),
-              e.cells['price']!.value.toString(),
-              e.cells['total']!.value.toString());
-        }
+    try {
+      saving = true;
+
+      // 1. Prepare Journal
+      final journalMaster = JournalsModel.fromMap({
+        'journal_id': int.tryParse(Maxjournals) ?? 0,
+        'journal_date': dateDate.toString(),
+        'journal_time': '${Selectedtime.hour}:${Selectedtime.minute}',
+        'journal_amount': numberFormat.format(amount_all),
+        'journal_currency': payment_currency,
+        'journal_rate': numberFormat.format(rate),
+        'journal_description': 'فاتورة شراء رقم $MaxInvoices / $AccountingPerson_select_name',
+      });
+
+      // 2. Prepare Journal Details
+      if (remaining > 0) {
+        journalMaster.details.add(JournalsDetailModel.fromMap({
+          'JD_id': 0,
+          'JD_journal_id': Maxjournals,
+          'JD_account_id': AccountingPerson_select_id,
+          'JD_account_name': AccountingPerson_select_name,
+          'JD_debit': "0",
+          'JD_credit': numberFormat.format(remaining),
+          'JD_description': 'فاتورة شراء رقم $MaxInvoices / $AccountingPerson_select_name',
+          'JD_currency': currencySelect,
+          'JD_rate': rate.toString(),
+          'JD_acc_amount': numberFormat.format(rate * remaining),
+        }));
       }
-    }
 
-    ///enf
+      if (amount_all >= 0) {
+        journalMaster.details.add(JournalsDetailModel.fromMap({
+          'JD_id': 0,
+          'JD_journal_id': Maxjournals,
+          'JD_account_id': "51",
+          'JD_account_name': "المشتريات",
+          'JD_debit': numberFormat.format(amount_all),
+          'JD_credit': "0",
+          'JD_description': 'فاتورة شراء رقم $MaxInvoices / $AccountingPerson_select_name',
+          'JD_currency': currencySelect,
+          'JD_rate': rate.toString(),
+          'JD_acc_amount': numberFormat.format(amount_all),
+        }));
+      }
+
+      // Handling Cash Payment
+      if (payment > 0) {
+        journalMaster.details.add(JournalsDetailModel.fromMap({
+          'JD_id': 0,
+          'JD_journal_id': Maxjournals,
+          'JD_account_id': AccountingTo_select_id,
+          'JD_account_name': AccountingTo_select_name,
+          'JD_debit': "0",
+          'JD_credit': numberFormat.format(payment),
+          'JD_description': 'إيصال صرف (كاش) $MaxVouchers / $AccountingPerson_select_name',
+          'JD_currency': currencySelect,
+          'JD_rate': rate.toString(),
+          'JD_acc_amount': numberFormat.format(rate * payment),
+        }));
+
+        await dbVouchers.upsertVoucherByJournal(Maxjournals, "(كاش)", {
+          'voucher_date': dateDate.toString(),
+          'voucher_time': '${Selectedtime.hour}:${Selectedtime.minute}',
+          'voucher_account': AccountingPerson_select_id,
+          'voucher_dealer': AccountingPerson_select_name,
+          'voucher_payment': numberFormat.format(payment),
+          'voucher_currency': payment_currency,
+          'voucher_journal': Maxjournals,
+          'voucher_discription': 'إيصال صرف (كاش) $MaxVouchers / $AccountingPerson_select_name',
+          'voucher_class': "صرف",
+        });
+      } else {
+        await dbVouchers.deleteVoucherByJournalAndDescription(Maxjournals, "(كاش)");
+      }
+
+      // Handling App Payment
+      if (payment_app > 0) {
+        journalMaster.details.add(JournalsDetailModel.fromMap({
+          'JD_id': 0,
+          'JD_journal_id': Maxjournals,
+          'JD_account_id': AccountingTo_select_id,
+          'JD_account_name': AccountingTo_select_name,
+          'JD_debit': "0",
+          'JD_credit': numberFormat.format(payment_app),
+          'JD_description': 'إيصال صرف (تطبيق) $MaxVouchers / $AccountingPerson_select_name',
+          'JD_currency': currencySelect,
+          'JD_rate': rate.toString(),
+          'JD_acc_amount': numberFormat.format(rate * payment_app),
+        }));
+
+        await dbVouchers.upsertVoucherByJournal(Maxjournals, "(تطبيق)", {
+          'voucher_date': dateDate.toString(),
+          'voucher_time': '${Selectedtime.hour}:${Selectedtime.minute}',
+          'voucher_account': AccountingPerson_select_id,
+          'voucher_dealer': AccountingPerson_select_name,
+          'voucher_payment': numberFormat.format(payment_app),
+          'voucher_currency': payment_currency,
+          'voucher_journal': Maxjournals,
+          'voucher_discription': 'إيصال صرف (تطبيق) $MaxVouchers / $AccountingPerson_select_name',
+          'voucher_class': "صرف",
+        });
+      } else {
+        await dbVouchers.deleteVoucherByJournalAndDescription(Maxjournals, "(تطبيق)");
+      }
+
+      // 3. Update Journal with Details
+      await dbJournals.updateJournalWithDetails(journalMaster);
+
+      // 4. Prepare Invoice
+      double totalPayment = payment + payment_app;
+      final invoiceMaster = InvoicesModel.full(
+        id: int.tryParse(InvoiceNo) ?? 0,
+        rate: rate.toString(),
+        date: dateDate.toString(),
+        time: '${Selectedtime.hour}:${Selectedtime.minute}',
+        accountNo: AccountingPerson_select_id,
+        accountName: AccountingPerson_select_name,
+        accountingToNo: AccountingTo_select_id,
+        accountingToName: AccountingTo_select_name,
+        amount: amount.toString(),
+        disscount: disscount.toString(),
+        amountAll: amount_all.toString(),
+        currency: currencySelect,
+        payment: totalPayment.toString(),
+        paymentCurrency: payment_currency,
+        remaining: remaining.toString(),
+        jornal: Maxjournals,
+        discription: "",
+        type: 'المشتريات',
+      );
+
+      // 5. Populate Invoice Items
+      for (var e in stateManager.rows) {
+        invoiceMaster.details.add(InvoicesDetailModel.full(
+          id: int.tryParse(e.cells['id']!.value.toString()) ?? 0,
+          invoicesId: InvoiceNo,
+          itemNo: e.cells['id_item']!.value.toString(),
+          itemName: e.cells['name']!.value.toString(),
+          unitName: 'وحدة',
+          unitQty: e.cells['qty']!.value.toString(),
+          unitPrice: e.cells['price']!.value.toString(),
+          netPrice: e.cells['total']!.value.toString(),
+        ));
+      }
+
+      // 6. Save Invoice with Details
+      await dbInvoices.updateInvoicesWithDetails(invoiceMaster);
+
+      print('✅ تم تحديث فاتورة المشتريات رقم $InvoiceNo وتفاصيلها بنجاح');
+    } catch (e) {
+      print('❌ خطأ في تحديث الفاتورة: $e');
+    } finally {
+      saving = false;
+    }
   }
 
   InputDecoration inputDecorationNoIcon(String hintText) {

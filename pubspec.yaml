@@ -58,11 +58,12 @@ dependencies:
   path: ^1.9.0
 dependency_overrides:
   intl: ^0.19.0
-
+  permission_handler_windows: ^0.2.0  # or remove entirely
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0 # Updated
+  inno_bundle: ^0.11.2
 
 flutter:
   uses-material-design: true
@@ -100,3 +101,6 @@ flutter:
         - asset: assets/fonts/ArbFONTS-Amiri-Bold.ttf
           weight: 700
 
+inno_bundle:
+  id: 9bcfef80-22a5-11f1-baad-2d78f8cf9252
+  publisher: Eng.Mohamed Atef Toman

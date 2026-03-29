@@ -17,11 +17,13 @@ import '../widgets/TimePickerWithBookedHours.dart';
 
 class DatingAddDialog extends StatefulWidget {
   final String title, positiveBtnText, negativeBtnText;
+  final String? patientName;
   const DatingAddDialog({
     super.key,
     required this.title,
     required this.positiveBtnText,
     required this.negativeBtnText,
+    this.patientName,
   });
   @override
   State<StatefulWidget> createState() => _DatingAddDialogState();
@@ -89,16 +91,27 @@ class _DatingAddDialogState extends State<DatingAddDialog> {
   @override
   void initState() {
     super.initState();
+    if (widget.patientName != null && widget.patientName!.isNotEmpty) {
+      selectPatintList = widget.patientName!;
+    }
+    for (int i = 0; i < 50; i++) {
+      disabledListedColor!.add(
+        Color(Random().nextInt(0xffffffff)).withAlpha(0xff),
+      );
+    }
     _loadRooms().then((_) {
       CheckDated(dateDate, datePlace, selectDoctorList);
     });
-    setState(() {
-      selecedPatientList();
-      selecedDoctorList();
-      for (int i = 0; i < 50; i++) {
-        disabledListedColor!.add(
-          Color(Random().nextInt(0xffffffff)).withAlpha(0xff),
-        );
+    selecedPatientList().then((_) {
+      // After loading patients, lookup selected patient ID
+      if (selectPatintList.isNotEmpty) {
+        selecedPatientId(selectPatintList);
+      }
+    });
+    selecedDoctorList().then((_) {
+      // After loading doctors, lookup selected doctor ID
+      if (selectDoctorList.isNotEmpty) {
+        selecedDoctorId(selectDoctorList);
       }
     });
   }
@@ -110,37 +123,44 @@ class _DatingAddDialogState extends State<DatingAddDialog> {
 
   @override
   Widget build(BuildContext context) {
-    selecedtdatePlaceList();
-    if (uniquePersons.isEmpty) {
-      return const CircularProgressIndicator();
-    } else {
-      selectPatintList = uniquePersons.contains(selectPatintList)
-          ? selectPatintList
-          : (uniquePersons.isNotEmpty ? uniquePersons[0] : "");
-      selectDoctorList = uniqueDoctors.contains(selectDoctorList)
-          ? selectDoctorList
-          : (uniqueDoctors.isNotEmpty ? uniqueDoctors[0] : "");
-
-      selecedPatientId(selectPatintList);
-      selecedDoctorId(selectDoctorList);
-      return Directionality(
-        textDirection: TextDirection.rtl,
-        child: Dialog(
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-          child: _buildDialogContent(context),
-        ),
-      );
+    // Determine active values locally for this build frame
+    // without modifying the state fields directly during build.
+    
+    String activePatient = selectPatintList;
+    if (uniquePersons.isNotEmpty && !uniquePersons.contains(activePatient)) {
+      activePatient = uniquePersons.first;
     }
+
+    String activeDoctor = selectDoctorList;
+    if (uniqueDoctors.isNotEmpty && !uniqueDoctors.contains(activeDoctor)) {
+      activeDoctor = uniqueDoctors.first;
+    }
+
+    if (uniquePersons.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Dialog(
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        child: _buildDialogContent(context, activePatient, activeDoctor),
+      ),
+    );
   }
 
-  Widget _buildDialogContent(BuildContext context) {
-    return DefaultTabController(
-      length: 1,
-      child: SingleChildScrollView(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 500, maxHeight: 900),
-          child: Stack(
+  Widget _buildDialogContent(BuildContext context, String activePatient, String activeDoctor) {
+    // Determine active datePlace locally
+    String activeDatePlace = datePlace;
+    if (datePlaceList.isNotEmpty && !datePlaceList.contains(activeDatePlace)) {
+      activeDatePlace = datePlaceList.first;
+    }
+
+    return SingleChildScrollView(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 500),
+        child: Stack(
             alignment: Alignment.topCenter,
             children: <Widget>[
               Container(
@@ -158,32 +178,20 @@ class _DatingAddDialogState extends State<DatingAddDialog> {
                   right: 8,
                 ), // spacing inside the box
                 child: Column(
-                  mainAxisSize: MainAxisSize.max,
+                  mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     Text(
                       title,
                       style: CustomTheme.lightTheme.textTheme.titleLarge,
                     ),
-                    const SizedBox(height: 2),
-                    const TabBar(
-                      tabs: [
-                        Tab(
-                          icon: Icon(Icons.home, color: Colors.black, size: 35),
-                        ),
-                      ],
-                    ),
+                    const SizedBox(height: 10),
                     SizedBox(
-                      height: 650,
                       width: 400,
                       child: GestureDetector(
                         onTap: () {
                           FocusManager.instance.primaryFocus?.unfocus();
                         },
-                        child: TabBarView(
-                          children: [
-                            Container(child: textEditFisrtPage(context)),
-                          ],
-                        ),
+                        child: textEditFisrtPage(context, activePatient, activeDoctor, activeDatePlace),
                       ),
                     ),
                   ],
@@ -197,12 +205,13 @@ class _DatingAddDialogState extends State<DatingAddDialog> {
             ],
           ),
         ),
-      ),
-    );
+      );
   }
 
-  Widget textEditFisrtPage(BuildContext context) {
+  Widget textEditFisrtPage(BuildContext context, String activePatient, String activeDoctor, String activeDatePlace) {
     return ListView(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       children: [
         Column(
           children: [
@@ -266,7 +275,7 @@ class _DatingAddDialogState extends State<DatingAddDialog> {
                 ),
                 prefixIcon: Icon(Icons.person, color: Colors.blue, size: 35),
               ),
-              initialValue: selectDoctorList,
+              initialValue: activeDoctor,
               items: uniqueDoctors.map((e) {
                 return DropdownMenuItem(
                   value: e,
@@ -295,7 +304,7 @@ class _DatingAddDialogState extends State<DatingAddDialog> {
             DropdownButtonFormField(
               key: _datePlace,
               alignment: AlignmentDirectional.center,
-              initialValue: datePlace,
+              initialValue: activeDatePlace,
               items: datePlaceList.map((e) {
                 return DropdownMenuItem(
                   value: e,
@@ -384,7 +393,7 @@ class _DatingAddDialogState extends State<DatingAddDialog> {
                   selecedPatientId(selectPatintList);
                 });
               },
-              //selectedItem: "",
+              selectedItem: activePatient,
             ),
 
             const SizedBox(height: 2),
@@ -494,7 +503,7 @@ class _DatingAddDialogState extends State<DatingAddDialog> {
                     selectPatintID,
                     selectPatintList,
                   );
-                  Navigator.of(context).pop();
+                  Navigator.of(context).pop(Start);
                   //refreshList();
                 }
               },
@@ -571,17 +580,17 @@ class _DatingAddDialogState extends State<DatingAddDialog> {
 
   Future<void> selecedPatientList() async {
     DbPatient dbPatient = DbPatient();
-    dbPatient.allPatients().then((Patients) {
-      if (mounted) {
-        setState(() {
-          listPersons.clear();
-          for (var patient in Patients) {
-            if (patient.name.isNotEmpty)
-              listPersons.add(patient.name.toString());
+    final patients = await dbPatient.allPatients();
+    if (mounted) {
+      setState(() {
+        listPersons.clear();
+        for (var patient in patients) {
+          if (patient.name.isNotEmpty) {
+            listPersons.add(patient.name.toString());
           }
-        });
-      }
-    });
+        }
+      });
+    }
   }
 
   Future<void> selecedPatientId(String name) async {
@@ -612,19 +621,18 @@ class _DatingAddDialogState extends State<DatingAddDialog> {
 
   Future<void> selecedDoctorList() async {
     DbEmployee dbEmployee = DbEmployee();
-    dbEmployee.allEmployees().then((employees) {
-      if (mounted) {
-        setState(() {
-          listDoctors.clear();
-          for (var item in employees) {
-            EmployeeModel employee = EmployeeModel.fromMap(item);
-            if (employee.jop == 'دكتور') {
-              listDoctors.add(employee.name.toString());
-            }
+    final employees = await dbEmployee.allEmployees();
+    if (mounted) {
+      setState(() {
+        listDoctors.clear();
+        for (var item in employees) {
+          EmployeeModel employee = EmployeeModel.fromMap(item);
+          if (employee.jop == 'دكتور') {
+            listDoctors.add(employee.name.toString());
           }
-        });
-      }
-    });
+        }
+      });
+    }
   }
 
   void addNewDate(String title, DateTime Start, DateTime End, String place) {

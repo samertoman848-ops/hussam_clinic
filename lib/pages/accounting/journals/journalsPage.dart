@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hussam_clinc/View_model/ViewModelJournals.dart';
 import 'package:pluto_grid/pluto_grid.dart';
-import '../../../global_var/globals.dart';
 import '../../../reports/reportSalesInvoicePDF.dart';
 
 class JournalsPage extends StatefulWidget{
@@ -69,110 +68,80 @@ class JournalsPageState extends State<JournalsPage>{
   }
   /// Widgit
   List<Widget>BarActions() {
-    return
-      <Widget>[
-        IconButton(
-            iconSize:40,
-            icon: const Icon(
-                Icons.request_page_rounded,
-                color:Colors.white
+    return <Widget>[
+      IconButton(
+        iconSize: 40,
+        icon: const Icon(Icons.request_page_rounded, color: Colors.white),
+        tooltip: 'تقرير PDF',
+        onPressed: () {
+          reportSalesInvoicePDF InvoiceReport = reportSalesInvoicePDF();
+          InvoiceReport.inti();
+          InvoiceReport.stateManager = VMJournals.stateManager;
+        },
+      ),
+      IconButton(
+        iconSize: 40,
+        icon: const Icon(Icons.add_box_outlined, color: Colors.white),
+        tooltip: 'إضافة سطر جديد',
+        onPressed: () {
+          setState(() {
+            VMJournals.addNewRow();
+          });
+        },
+      ),
+      IconButton(
+        iconSize: 40,
+        icon: const Icon(Icons.delete_sweep_outlined, color: Colors.white),
+        tooltip: 'حذف السطر المختار',
+        onPressed: () {
+          setState(() {
+            VMJournals.stateManager.removeCurrentRow();
+          });
+        },
+      ),
+      IconButton(
+        iconSize: 40,
+        icon: Icon(VMJournals.EditeMode ? Icons.edit_note : Icons.save_as_outlined, color: Colors.white),
+        tooltip: VMJournals.EditeMode ? 'حفظ التعديلات' : 'حفظ القيد الجديد',
+        onPressed: () async {
+          final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Text(VMJournals.EditeMode ? 'تأكيد التعديل' : 'تأكيد الحفظ'),
+              content: Text('هل تريد ${VMJournals.EditeMode ? 'تعديل' : 'حفظ'} هذا القيد المحاسبي؟'),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1D9D99)),
+                  child: const Text('تأكيد', style: TextStyle(color: Colors.white)),
+                ),
+              ],
             ),
-            onPressed: () {
-              setState(() {
-                reportSalesInvoicePDF InvoiceReport=reportSalesInvoicePDF();
-                InvoiceReport.inti();
-                InvoiceReport.stateManager= VMJournals.stateManager;
-              });
-            }),
-        IconButton(
-            iconSize:40,
-            icon: const Icon(
-                Icons.delete,
-                color:Colors.white
-            ),
-            onPressed: () {
-              setState(() {
-                VMJournals.stateManager.removeCurrentRow();
-              });
-            }),
-        IconButton(
-            iconSize:40,
-            icon:Icon(
-                VMJournals.saving? Icons.edit:Icons.save,
-                color:Colors.white
-            ),
-            onPressed: () {
-              setState(() {
-                /// the record is execces you must update record
-                if(VMJournals.saving){
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    action: SnackBarAction(
-                      textColor:Colors.white,
-                      backgroundColor:Colors.pinkAccent,
-                      label: '  تعديل  فاتورة البيع ',
-                      onPressed: () {
-                        ///Todo Edite Invoices
-                        //VMJournals.EditeInvoices(VMJournals.MaxInvoices);
-                        VMJournals.saving=true;
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                          backgroundColor:Colors.blue,
-                          content: Text(
-                            ' تم تعديل  فاتورة البيع بنجاح ',
-                            style: TextStyle(fontSize: 20,fontWeight:FontWeight.bold,color:Colors.white),
-                          ),
-                          duration: Duration(seconds: 4),
-                        ));
-                        AllPatientList();
-                        copyExternalDB();
-                      },
-                    ),
-                    content: const Column(
-                      children: [
-                        Text(
-                          ' لم يتم تعديل فاتورة البيع ',
-                          style: TextStyle(fontSize: 20,fontWeight:FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                    duration: const Duration(seconds: 5),
-                  ));
-                }else{
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    action: SnackBarAction(
-                      textColor:Colors.white,
-                      backgroundColor:Colors.pinkAccent,
-                      label: 'تأكيد  إضافة  فاتورة البيع ',
-                      onPressed: () {
-                        //VMJournals.AddNewInvoices();
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                          backgroundColor:Colors.green,
-                          content: Text(
-                            ' تم إضافة  فاتورة البيع بنجاح ',
-                            style: TextStyle(fontSize: 20,fontWeight:FontWeight.bold,color:Colors.white),
-                          ),
-                          duration: Duration(seconds: 4),
-                        ));
-                        AllPatientList();
-                        copyExternalDB();
-                        setState(() {
-                          VMJournals.saving=true;
-                        });
-                      },
-                    ),
-                    content: const Column(
-                      children: [
-                        Text(
-                          ' لم يتم إضافة  فاتورة البيع ',
-                          style: TextStyle(fontSize: 20,fontWeight:FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                    duration: const Duration(seconds: 5),
-                  ));
-                }//if
-              });
-            }),
-      ];
+          );
+
+          if (confirmed == true) {
+            try {
+              await VMJournals.saveJournal();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  backgroundColor: Colors.green,
+                  content: Text('تم حفظ القيد المحاسبي بنجاح وتحديث السجلات المرتبطة'),
+                ));
+                Navigator.of(context).pop();
+              }
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  backgroundColor: Colors.red,
+                  content: Text('خطأ أثناء الحفظ: $e'),
+                ));
+              }
+            }
+          }
+        },
+      ),
+    ];
   }
 
   Widget firstRow() {

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hussam_clinc/View_model/ViewModelGlobal.dart';
 import 'package:hussam_clinc/data/TimetableWidgt.dart';
 import 'package:hussam_clinc/model/Employment/EmployeeModel.dart';
@@ -15,7 +16,9 @@ import 'package:hussam_clinc/theme/app_theme.dart';
 import 'package:hussam_clinc/services/notification_service.dart';
 import 'package:hussam_clinc/services/StorageService.dart';
 import 'package:hussam_clinc/services/firebase_sync_service.dart';
+import 'package:hussam_clinc/services/BackupService.dart';
 import 'package:hussam_clinc/global_var/globals.dart';
+import 'package:hussam_clinc/pages/auth/login_page.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 List<DateTime> DatesListUniq = [];
@@ -79,31 +82,80 @@ class _DateModel extends DateModel {
 }
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Storage and Config
-  await StorageService().loadConfig();
+    // Suppress MissingPluginException for sensors on Windows
+    if (!kIsWeb && Platform.isWindows) {
+      // Catch synchronous errors (like build methods)
+      final originalOnError = FlutterError.onError;
+      FlutterError.onError = (FlutterErrorDetails details) {
+        final exceptionStr = details.exception.toString();
+        if (exceptionStr.contains('MissingPluginException') &&
+            (exceptionStr.contains('sensors') ||
+                exceptionStr.contains('accelerometer'))) {
+          debugPrint(
+              'Suppressed expected MissingPluginException for sensors on Windows');
+          return;
+        }
+        originalOnError?.call(details);
+      };
 
-  // Initialize Notifications
-  await NotificationService().init();
-
-  // Initialize Firebase sync (safe fallback if Firebase is not configured)
-  await FirebaseSyncService.instance.initialize();
-  await FirebaseSyncService.instance.pullPatientsToLocal(cooldown: Duration.zero);
-
-  // Ensure Root Directory exists (Desktop/Mobile only)
-  if (!kIsWeb) {
-    final directory = Directory(appRootPath);
-    if (!directory.existsSync()) {
-      directory.createSync(recursive: true);
+      // Catch asynchronous/platform errors
+      PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+        final errorStr = error.toString();
+        if (errorStr.contains('MissingPluginException') &&
+            (errorStr.contains('sensors') ||
+                errorStr.contains('accelerometer'))) {
+          debugPrint('Suppressed unhandled sensors exception on Windows');
+          return true; // Error is handled
+        }
+        return false; // Let the error fall through
+      };
     }
 
-    // Initialize FFI for desktop platforms (Windows, Linux, macOS)
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
+    // Initialize FFI for desktop platforms (Windows, Linux, macOS) as early as possible
+    if (!kIsWeb) {
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        sqfliteFfiInit();
+        databaseFactory = databaseFactoryFfi;
+      }
     }
+
+    // Initialize Storage and Config (loads appRootPath)
+    await StorageService().loadConfig();
+    
+    // Initialize Backup Config
+    await BackupService().loadConfig();
+    await BackupService().checkAutoBackup();
+
+    // Ensure Root Directory exists (Desktop/Mobile only)
+    if (!kIsWeb) {
+      final directory = Directory(appRootPath);
+      if (!directory.existsSync()) {
+        directory.createSync(recursive: true);
+      }
+    }
+
+    // Initialize Notifications in background (Non-blocking)
+    NotificationService().init().catchError((e) {
+      debugPrint('Notification background init error: $e');
+    });
+
+    // Initialize Firebase sync in the background (Non-blocking)
+    FirebaseSyncService.instance.initialize().then((_) {
+      FirebaseSyncService.instance
+          .pullPatientsToLocal(cooldown: Duration.zero)
+          .catchError((e) {
+        debugPrint('Post-init pull error: $e');
+      });
+    }).catchError((e) {
+      debugPrint('Firebase background init error: $e');
+    });
+  } catch (e) {
+    debugPrint('Critical initialization error: $e');
   }
+
   runApp(const MyApp());
 }
 
@@ -121,11 +173,13 @@ class MyApp extends StatelessWidget {
       ],
       supportedLocales: const [Locale('ar'), Locale('en')],
       locale: const Locale('ar'),
-      home: const TimetableWidgt(title: 'الرئيسية'),
+      home: const LoginPage(),
       builder: (context, child) {
-        return Directionality(textDirection: TextDirection.rtl, child: child!);
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: child!,
+        );
       },
     );
   }
 }
-

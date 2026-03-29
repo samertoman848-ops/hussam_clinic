@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-
+import 'dart:async';
 import 'package:hussam_clinc/data/TimetableExample.dart';
 import 'package:hussam_clinc/data/positioning_demo.dart';
 import 'package:hussam_clinc/data/utils.dart';
@@ -12,6 +12,10 @@ import '../db/patients/dbpatient.dart';
 import '../global_var/globals.dart';
 import '../main.dart';
 import '../widgets/app_drawer.dart';
+import '../services/AuthService.dart';
+import '../pages/auth/login_page.dart';
+import '../services/ClinicService.dart';
+import '../widgets/ClinicSwitcher.dart';
 
 class TimetableWidgt extends StatefulWidget {
   const TimetableWidgt({super.key, required this.title});
@@ -25,6 +29,8 @@ final scaffoldKey = GlobalKey<ScaffoldMessengerState>();
 class TimetableWidgtState extends State<TimetableWidgt> {
   late DbHelper helper;
   late DbDate dbDates;
+  late Timer _sessionCheckTimer;
+  bool _isReloading = false;
 
   @override
   void initState() {
@@ -34,10 +40,73 @@ class TimetableWidgtState extends State<TimetableWidgt> {
     // databaseFactory = databaseFactoryFfi;
     helper = DbHelper();
     dbDates = DbDate();
+
+    // Start session check timer - check every minute
+    _sessionCheckTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      _checkSessionExpiry();
+    });
+
+    // Also check immediately
+    _checkSessionExpiry();
+
     _initializeApp();
   }
 
+  void _checkSessionExpiry() {
+    final authService = AuthService();
+
+    // Check if session has expired
+    if (!authService.isAuthenticated) {
+      _sessionCheckTimer.cancel();
+
+      if (mounted) {
+        // Show timeout dialog and redirect to login
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: const Text('انتهت جلسة العمل'),
+              content:
+                  const Text('لقد انتهت مدة جلستك، يرجى تسجيل الدخول مجدداً'),
+              actions: [
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(
+                          builder: (context) => const LoginPage()),
+                      (route) => false,
+                    );
+                  },
+                  child: const Text('تسجيل الدخول'),
+                )
+              ],
+            );
+          },
+        );
+      }
+    } else if (authService.isSessionAboutToExpire()) {
+      // Show warning if less than 10 minutes remaining
+      final remainingMinutes = authService.getSessionRemainingMinutes();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تحذير: سينتهي وقت جلستك خلال $remainingMinutes دقائق'),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _sessionCheckTimer.cancel();
+    super.dispose();
+  }
+
   Future<void> _initializeApp() async {
+    if (mounted) setState(() => _isReloading = true);
     try {
       // Create folders first
       await Future.wait([
@@ -51,27 +120,13 @@ class TimetableWidgtState extends State<TimetableWidgt> {
       await copyExternalDB();
 
       // Give database a moment to initialize
-      await Future.delayed(const Duration(milliseconds: 500));
+      await Future.delayed(const Duration(milliseconds: 200));
 
-      // Load all data after database is ready
-      await AllPatientList();
-
-      /// create list Acoounting Persons
-      await AllAccountingTreeList();
-      await AllAccountingTreeGroup();
-      await AllSuppliersTreeList();
-      await AllEmployeeTreeList();
-      await AllPaitentsTreeList();
-
-      /// create list  Indexes
-      await AllAccountingIndexList();
+      // Reload all data - this will use the current selectedDbName
+      await reloadAllData();
 
       /// Load base dates data
       final datesList = await dbDates.GroupDates();
-
-      /// Load invoices, etc
-      await AllInvioces();
-      await VMGlobal.MaxNoS();
 
       if (mounted) {
         setState(() {
@@ -85,6 +140,8 @@ class TimetableWidgtState extends State<TimetableWidgt> {
           SnackBar(content: Text('خطأ في تحميل البيانات: $e')),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isReloading = false);
     }
   }
 
@@ -102,11 +159,51 @@ class TimetableWidgtState extends State<TimetableWidgt> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isReloading) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 20),
+              Text(
+                'جاري تحميل بيانات عيادة ${ClinicService().currentClinicName}...',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.title),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(widget.title),
+            Text(
+              'العيادة: ${ClinicService().currentClinicName}',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+            ),
+          ],
+        ),
+        actions: [
+          QuickClinicNavigation(
+            onClinicChanged: () {
+              _initializeApp();
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
-      drawer: const AppDrawer(),
+      drawer: AppDrawer(
+        onClinicChanged: () {
+          _initializeApp();
+        },
+      ),
       body: userWidget(),
     );
   }

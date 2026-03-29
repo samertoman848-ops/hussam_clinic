@@ -41,9 +41,8 @@ class DbInvoicesDetails {
       return snap.docs.map((doc) => InvoicesDetailModel.fromMap(doc.data())).toList();
     }
     Database? db = await dbHelper.openDb();
-    String sql = "";
-    sql = 'SELECT * from invoices_detail WHERE ID_invoices_id=$id ';
-    final List<Map<String, Object?>> queryResult = await db!.rawQuery(sql);
+    const sql = 'SELECT * from invoices_detail WHERE ID_invoices_id = ?';
+    final List<Map<String, Object?>> queryResult = await db!.rawQuery(sql, [id]);
     return queryResult.map((e) => InvoicesDetailModel.fromMap(e)).toList();
   }
 
@@ -80,12 +79,8 @@ class DbInvoicesDetails {
       return;
     }
 
-    String Sql =
-        'INSERT INTO invoices_detail (ID_invoices_id, ID_item_no, ID_item_name, ID_unit_name, ID_unit_qty, ID_unit_price, ID_net_price)  VALUES ';
-    Sql = Sql +
-        '("$invoices_id","$item_no","$item_name","$unit_name","$unit_qty","$unit_price","$net_price");';
     Database? db = await dbHelper.openDb();
-    await db!.execute(Sql);
+    await db!.insert("invoices_detail", model.toMap());
     
     FirebaseSyncService.instance.pushInvoiceDetail(model);
   }
@@ -116,32 +111,36 @@ class DbInvoicesDetails {
       return;
     }
 
-    String Sql =
-        'UPDATE invoices_detail SET ID_invoices_id="$invoices_id",ID_item_no="$item_no",ID_item_name="$item_name" ';
-    Sql =
-        '$Sql ,ID_unit_name="وحدة" ,ID_unit_qty="$unit_qty" ,ID_unit_price="$unit_price" ,ID_net_price="$net_price" ';
-    Sql = '$Sql    WHERE ID_id="$id"';
-
     Database? db = await dbHelper.openDb();
-    await db!.execute(Sql);
+    await db!.update(
+      "invoices_detail",
+      model.toMap(),
+      where: "ID_id = ?",
+      whereArgs: [id],
+    );
 
     FirebaseSyncService.instance.pushInvoiceDetail(model);
   }
 
   // دالة حذف جميع تفاصيل الفاتورة برقمها
   Future<void> deleteInvoicesDetailsByInvoiceNo(String invoiceNo) async {
-    String sql =
-        'DELETE FROM invoices_detail WHERE ID_invoices_id="$invoiceNo"';
     Database? db = await dbHelper.openDb();
     print('حذف تفاصيل الفاتورة رقم: $invoiceNo');
-    return db!.execute(sql);
+    await db!.delete(
+      "invoices_detail",
+      where: "ID_invoices_id = ?",
+      whereArgs: [invoiceNo],
+    );
   }
 
   // دالة حذف صنف واحد برقمه
   Future<void> deleteInvoicesDetailById(String detailId) async {
-    String sql = 'DELETE FROM invoices_detail WHERE ID_id="$detailId"';
     Database? db = await dbHelper.openDb();
     print('حذف تفصيل الفاتورة رقم: $detailId');
-    return db!.execute(sql);
+    await db!.delete(
+      "invoices_detail",
+      where: "ID_id = ?",
+      whereArgs: [detailId],
+    );
   }
 }

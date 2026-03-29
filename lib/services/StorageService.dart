@@ -14,15 +14,30 @@ class StorageService {
     return p.join(Platform.environment['APPDATA'] ?? '.', 'hussam', 'root_path.txt');
   }
 
+  static String get _dbConfigFilePath {
+    if (kIsWeb) return '';
+    return p.join(Platform.environment['APPDATA'] ?? '.', 'hussam', 'db_name.txt');
+  }
+
   /// Loads the saved root path from disk
   Future<void> loadConfig() async {
     if (kIsWeb) return;
     try {
+      // Load root path
       final file = File(_configFilePath);
       if (await file.exists()) {
         final path = (await file.readAsString()).trim();
         if (path.isNotEmpty && Directory(path).existsSync()) {
           appRootPath = path;
+        }
+      }
+
+      // Load DB name
+      final dbFile = File(_dbConfigFilePath);
+      if (await dbFile.exists()) {
+        final name = (await dbFile.readAsString()).trim();
+        if (name.isNotEmpty) {
+          selectedDbName = name;
         }
       }
     } catch (e) {
@@ -44,6 +59,23 @@ class StorageService {
       appRootPath = path;
     } catch (e) {
       print('Error saving config: $e');
+    }
+  }
+
+  /// Saves the DB name to disk
+  Future<void> saveDbConfig(String name) async {
+    if (kIsWeb) {
+      selectedDbName = name;
+      return;
+    }
+    try {
+      final file = File(_dbConfigFilePath);
+      final parent = Directory(p.dirname(_dbConfigFilePath));
+      if (!parent.existsSync()) parent.createSync(recursive: true);
+      await file.writeAsString(name);
+      selectedDbName = name;
+    } catch (e) {
+      print('Error saving DB config: $e');
     }
   }
 

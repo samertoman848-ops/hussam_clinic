@@ -22,6 +22,8 @@ class SalesInvoices extends StatefulWidget {
 var VMSalesInvoice = ViewModelSalesInvoices.impty();
 
 class SalesInvoicesState extends State<SalesInvoices> {
+  // حفظ الصفوف في متغير State ثابت لمنع إعادة بنائها عند كل setState
+  late List<PlutoRow> _frozenRows;
   @override
   void dispose() {
     super.dispose();
@@ -34,15 +36,14 @@ class SalesInvoicesState extends State<SalesInvoices> {
     // عند فتح صفحة الفاتورة
     // تأكد من تحديث قوائم الأشخاص والحسابات
     if (!VMSalesInvoice.EditeMode) {
-      // إذا كانت فاتورة جديدة، امسح البيانات
       VMSalesInvoice.checkValues();
       VMSalesInvoice.checkValues2();
     } else {
-      // إذا كانت فاتورة قديمة للتعديل، حدث القوائم فقط
       VMSalesInvoice.checkValues2();
     }
-
-    print('✅ تم تحميل الفاتورة بـ ${VMSalesInvoice.rows.length} صنف');
+    // تجميد نسخة من الصفوف عند الفتح لمنع تغييرها أثناء البناء
+    _frozenRows = List<PlutoRow>.from(VMSalesInvoice.rows);
+    print('✅ SalesInvoices initState: EditeMode=${VMSalesInvoice.EditeMode}, rows=${_frozenRows.length}');
   }
 
   @override
@@ -104,7 +105,7 @@ class SalesInvoicesState extends State<SalesInvoices> {
               child: _buildInfoItem(
                 icon: Icons.confirmation_number_outlined,
                 label: 'رقم الفاتورة',
-                value: VMSalesInvoice.Maxjournals,
+                value: VMSalesInvoice.Maxjournals.padLeft(6, '0'),
               ),
             ),
             const SizedBox(width: 12),
@@ -201,41 +202,68 @@ class SalesInvoicesState extends State<SalesInvoices> {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      DropdownSearch<String>(
-                        popupProps: const PopupProps.menu(
-                          fit: FlexFit.loose,
-                          showSelectedItems: true,
-                          showSearchBox: true,
-                        ),
-                        items: (filter, loadProps) => VMSalesInvoice.persons,
-                        selectedItem:
-                            VMSalesInvoice.AccountingPerson_select_name,
-                        decoratorProps: DropDownDecoratorProps(
-                          baseStyle: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green,
-                            fontSize: 16,
+                      // في وضع التعديل: أظهر اسم المريض كنص قابل للتعديل
+                      if (VMSalesInvoice.EditeMode)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.teal.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppTheme.primaryColor.withOpacity(0.4)),
                           ),
-                          decoration: InputDecoration(
-                            prefixIcon: const Icon(Icons.person_pin_rounded,
-                                color: AppTheme.primaryColor),
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 8),
-                            border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                            hintText: "اختار الاسم ",
+                          child: Row(
+                            children: [
+                              const Icon(Icons.person_pin_rounded, color: AppTheme.primaryColor),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  VMSalesInvoice.AccountingPerson_select_name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.teal,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
+                        )
+                      else
+                        DropdownSearch<String>(
+                          popupProps: const PopupProps.menu(
+                            fit: FlexFit.loose,
+                            showSelectedItems: true,
+                            showSearchBox: true,
+                          ),
+                          items: (filter, loadProps) => VMSalesInvoice.persons,
+                          selectedItem:
+                              VMSalesInvoice.AccountingPerson_select_name,
+                          decoratorProps: DropDownDecoratorProps(
+                            baseStyle: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green,
+                              fontSize: 16,
+                            ),
+                            decoration: InputDecoration(
+                              prefixIcon: const Icon(Icons.person_pin_rounded,
+                                  color: AppTheme.primaryColor),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                              hintText: "اختار الاسم ",
+                            ),
+                          ),
+                          onChanged: (value) {
+                            if (value != null) {
+                              setState(() {
+                                VMSalesInvoice.AccountingPerson_select_name =
+                                    value;
+                                VMSalesInvoice.selecedId(value);
+                              });
+                            }
+                          },
                         ),
-                        onChanged: (value) {
-                          if (value != null) {
-                            setState(() {
-                              VMSalesInvoice.AccountingPerson_select_name =
-                                  value;
-                              VMSalesInvoice.selecedId(value);
-                            });
-                          }
-                        },
-                      ),
                     ],
                   ),
                 ),
@@ -377,25 +405,20 @@ class SalesInvoicesState extends State<SalesInvoices> {
                 _buildSummaryInput('الخصم', VMSalesInvoice.disscount, (val) {
                   setState(() {
                     VMSalesInvoice.disscount = double.tryParse(val) ?? 0;
-                    VMSalesInvoice.amount_all =
-                        VMSalesInvoice.amount - VMSalesInvoice.disscount;
-                    VMSalesInvoice.remaining = VMSalesInvoice.amount_all -
-                        (VMSalesInvoice.payment + VMSalesInvoice.payment_app);
+                    VMSalesInvoice.calculateTotals();
                   });
                 }),
                 _buildSummaryInput('دفع كاش', VMSalesInvoice.payment, (val) {
                   setState(() {
                     VMSalesInvoice.payment = double.tryParse(val) ?? 0;
-                    VMSalesInvoice.remaining = VMSalesInvoice.amount_all -
-                        (VMSalesInvoice.payment + VMSalesInvoice.payment_app);
+                    VMSalesInvoice.calculateTotals();
                   });
                 }),
                 _buildSummaryInput('دفع تطبيق', VMSalesInvoice.payment_app,
                     (val) {
                   setState(() {
                     VMSalesInvoice.payment_app = double.tryParse(val) ?? 0;
-                    VMSalesInvoice.remaining = VMSalesInvoice.amount_all -
-                        (VMSalesInvoice.payment + VMSalesInvoice.payment_app);
+                    VMSalesInvoice.calculateTotals();
                   });
                 }),
                 _buildPaymentCurrencyDropdown(),
@@ -565,14 +588,7 @@ class SalesInvoicesState extends State<SalesInvoices> {
                   // ignore if no row selected
                 }
                 // Recalculate totals after deletion
-                VMSalesInvoice.amount = 0;
-                for (var e in VMSalesInvoice.stateManager.rows) {
-                  VMSalesInvoice.amount += e.cells['total']!.value as num;
-                }
-                VMSalesInvoice.amount_all =
-                    VMSalesInvoice.amount - VMSalesInvoice.disscount;
-                VMSalesInvoice.remaining = VMSalesInvoice.amount_all -
-                    (VMSalesInvoice.payment + VMSalesInvoice.payment_app);
+                VMSalesInvoice.calculateTotals();
               });
             },
           );
@@ -602,8 +618,10 @@ class SalesInvoicesState extends State<SalesInvoices> {
                   await VMSalesInvoice.EditeInvoices(invoiceId);
                   _showToast(
                       'تم تعديل الفاتورة رقم $invoiceId بنجاح', Colors.blue);
+                  AllInvioces();
                   AllPatientList();
                   copyExternalDB();
+                  if (context.mounted) Navigator.of(context).pop();
                 },
               );
             } else {
@@ -612,11 +630,13 @@ class SalesInvoicesState extends State<SalesInvoices> {
                 message: 'هل أنت متأكد من إضافة هذه الفاتورة للنظام؟',
                 color: Colors.green,
                 onConfirm: () async {
-                  VMSalesInvoice.AddNewInvoices();
+                  await VMSalesInvoice.AddNewInvoices();
                   _showToast('تم حفظ الفاتورة بنجاح', Colors.green);
+                  AllInvioces();
                   AllPatientList();
                   copyExternalDB();
                   setState(() => VMSalesInvoice.saving = true);
+                  if (context.mounted) Navigator.of(context).pop();
                 },
               );
             }
@@ -709,19 +729,7 @@ class SalesInvoicesState extends State<SalesInvoices> {
                             VMSalesInvoice.stateManager
                                 .removeRows([rendererContext.row]);
                           } catch (e) {}
-                          VMSalesInvoice.amount = 0;
-                          for (var e in VMSalesInvoice.stateManager.rows) {
-                            final v = e.cells['total']?.value;
-                            if (v is num) {
-                              VMSalesInvoice.amount += v.toDouble();
-                            } else if (v is String)
-                              VMSalesInvoice.amount += double.tryParse(v) ?? 0;
-                          }
-                          VMSalesInvoice.amount_all =
-                              VMSalesInvoice.amount - VMSalesInvoice.disscount;
-                          VMSalesInvoice.remaining = VMSalesInvoice.amount_all -
-                              (VMSalesInvoice.payment +
-                                  VMSalesInvoice.payment_app);
+                          VMSalesInvoice.calculateTotals();
                         });
                       },
                       child: const Text('تأكيد'),
@@ -737,10 +745,15 @@ class SalesInvoicesState extends State<SalesInvoices> {
 
     return PlutoGrid(
       columns: localColumns,
-      rows: VMSalesInvoice.rows,
+      rows: _frozenRows,
       onLoaded: (event) {
         VMSalesInvoice.stateManager = event.stateManager;
         VMSalesInvoice.stateManager.setShowColumnFilter(false);
+        if (mounted) {
+          setState(() {
+            VMSalesInvoice.calculateTotals();
+          });
+        }
       },
       rowColorCallback: (PlutoRowColorContext rowColorContext) {
         return rowColorContext.row.cells['id']?.value == '0'
@@ -778,15 +791,13 @@ class SalesInvoicesState extends State<SalesInvoices> {
               currentRow.cells['price']!.value * currentRow.cells['qty']!.value;
         }
 
-        VMSalesInvoice.amount = 0;
-        for (var e in VMSalesInvoice.stateManager.rows) {
-          VMSalesInvoice.amount += e.cells['total']!.value;
-        }
-        setState(() {
-          VMSalesInvoice.amount_all =
-              VMSalesInvoice.amount - VMSalesInvoice.disscount;
-          VMSalesInvoice.remaining = VMSalesInvoice.amount_all -
-              (VMSalesInvoice.payment + VMSalesInvoice.payment_app);
+        // Use addPostFrameCallback to avoid "setState() called when widget tree was locked"
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              VMSalesInvoice.calculateTotals();
+            });
+          }
         });
       },
       configuration: PlutoGridConfiguration(

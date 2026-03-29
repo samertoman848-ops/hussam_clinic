@@ -11,7 +11,6 @@ import '../../../View_model/ViewModelSalesInvoices.dart';
 import '../../../db/patients/dbpatient.dart';
 import '../../../model/accounting/AccoutingTreeModel.dart';
 import 'SalesInvoices.dart';
-import 'SalesInvoicesOptions.dart';
 
 const Color primaryColor = Color(0xffd0d4d7); //corner
 const Color accentColor = Color(0xff3f86bd); //background
@@ -28,7 +27,7 @@ class SaleInvoicesReview extends StatefulWidget {
 }
 
 class SaleInvoicesReviewState extends State<SaleInvoicesReview> {
-  late InvoicesReviewDataSource invoicesReviewData;
+  InvoicesReviewDataSource invoicesReviewData = InvoicesReviewDataSource(invoicesData: []);
   final DataGridController _dataGridController = DataGridController();
   String? selectedInvoiceId; // تتبع الفاتورة المختارة
   String? lastTappedInvoiceId; // تتبع آخر فاتورة تم الضغط عليها
@@ -47,9 +46,9 @@ class SaleInvoicesReviewState extends State<SaleInvoicesReview> {
         AccoutingTreeModel tree = AccoutingTreeModel.Valueed(
           patient.id,
           patient.name,
-          patient.id.toString(),
+          patient.fileNo,
           '5200',
-          patient.id.toString(),
+          patient.fileNo,
         );
         allAccountingCoustmers.add(tree);
         if (patient.name.isNotEmpty) {
@@ -67,41 +66,45 @@ class SaleInvoicesReviewState extends State<SaleInvoicesReview> {
   @override
   void initState() {
     super.initState();
-    void handleDelete(BuildContext ctx, String id) async {
-      final confirmed = await showDialog<bool>(
-        context: ctx,
-        builder: (dctx) => AlertDialog(
-          title:
-              const Text('حذف الفاتورة', style: TextStyle(color: Colors.red)),
-          content: const Text(
-              'هل أنت متأكد من حذف هذه الفاتورة؟ سيتم حذفها نهائياً.'),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(dctx, false),
-                child: const Text('إلغاء')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              onPressed: () => Navigator.pop(dctx, true),
-              child: const Text('تأكيد'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed == true) {
-        DbInvoices db = DbInvoices();
-        await db.deleteInvoice(id);
+
+    _refreshData();
+  }
+
+  void _refreshData() {
+    AllInvioces().then((_) {
+      if (mounted) {
         setState(() {
-          allInvoices.removeWhere((inv) => inv.id.toString() == id);
           invoicesReviewData = InvoicesReviewDataSource(
-              invoicesData: allInvoices, onDelete: handleDelete);
+              invoicesData: List.from(allInvoices), // Create a copy to ensure rebuild
+              onDelete: (ctx, id) async {
+                final confirmed = await showDialog<bool>(
+                  context: ctx,
+                  builder: (dctx) => AlertDialog(
+                    title: const Text('حذف الفاتورة',
+                        style: TextStyle(color: Colors.red)),
+                    content: const Text(
+                        'هل أنت متأكد من حذف هذه الفاتورة؟ سيتم حذفها نهائياً.'),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(dctx, false),
+                          child: const Text('إلغاء')),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red),
+                        onPressed: () => Navigator.pop(dctx, true),
+                        child: const Text('تأكيد'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  DbInvoices db = DbInvoices();
+                  await db.deleteInvoice(id);
+                  _refreshData();
+                }
+              });
         });
       }
-    }
-
-    setState(() {
-      //AllInvioces();
-      invoicesReviewData = InvoicesReviewDataSource(
-          invoicesData: allInvoices, onDelete: handleDelete);
     });
   }
 
@@ -149,38 +152,7 @@ class SaleInvoicesReviewState extends State<SaleInvoicesReview> {
         setState(() {
           allInvoices
               .removeWhere((inv) => inv.id.toString() == selectedInvoiceId);
-          invoicesReviewData = InvoicesReviewDataSource(
-            invoicesData: allInvoices,
-            onDelete: (ctx, id) async {
-              final confirmed = await showDialog<bool>(
-                context: ctx,
-                builder: (dctx) => AlertDialog(
-                  title: const Text('حذف الفاتورة',
-                      style: TextStyle(color: Colors.red)),
-                  content: const Text(
-                      'هل أنت متأكد من حذف هذه الفاتورة؟ سيتم حذفها نهائياً.'),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(dctx, false),
-                        child: const Text('إلغاء')),
-                    ElevatedButton(
-                      style:
-                          ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                      onPressed: () => Navigator.pop(dctx, true),
-                      child: const Text('تأكيد'),
-                    ),
-                  ],
-                ),
-              );
-              if (confirmed == true) {
-                DbInvoices db = DbInvoices();
-                await db.deleteInvoice(id);
-                setState(() {
-                  allInvoices.removeWhere((inv) => inv.id.toString() == id);
-                });
-              }
-            },
-          );
+          _refreshData();
           selectedInvoiceId = null;
         });
 
@@ -235,9 +207,10 @@ class SaleInvoicesReviewState extends State<SaleInvoicesReview> {
                     VMSalesInvoice = ViewModelSalesInvoices.impty();
 
                     if (mounted) {
-                      Navigator.of(context).push(
+                      await Navigator.of(context).push(
                         PageTransition(child: const SalesInvoices()),
                       );
+                      _refreshData();
                     }
                   },
                 ),
@@ -306,9 +279,10 @@ class SaleInvoicesReviewState extends State<SaleInvoicesReview> {
 
         // الضغطة الثانية: فتح الفاتورة
         if (lastTappedInvoiceId == s && mounted) {
-          Navigator.of(context).push(
+          await Navigator.of(context).push(
               MaterialPageRoute(builder: (context) => const SalesInvoices()));
           lastTappedInvoiceId = null; // إعادة تعيين بعد الفتح
+          _refreshData();
         }
       },
       allowSorting: true,
@@ -365,6 +339,14 @@ class SaleInvoicesReviewState extends State<SaleInvoicesReview> {
               padding: const EdgeInsets.all(8.0),
               alignment: Alignment.center,
               child: const Text('اسم الحساب'))),
+      GridColumn(
+          columnName: 'patient_link',
+          allowFiltering: false,
+          allowSorting: false,
+          label: Container(
+              padding: const EdgeInsets.all(8.0),
+              alignment: Alignment.center,
+              child: const Text('ملف المريض'))),
       GridColumn(
           columnName: '_jornal',
           allowFiltering: false,

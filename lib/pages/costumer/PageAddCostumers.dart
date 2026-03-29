@@ -5,6 +5,23 @@ import '../../db/patients/dbpatienthealth.dart';
 import '../../global_var/globals.dart';
 import '../../main.dart';
 import '../../model/patients/PatientHealthModel.dart';
+import 'package:hussam_clinc/db/patients/dbpatienthealthdoctor.dart';
+import 'package:hussam_clinc/db/patients/dbpicture.dart';
+import 'package:hussam_clinc/model/patients/PatientHealthDoctorModel.dart';
+import 'package:intl/intl.dart' as tt;
+import '../../db/dbemployee.dart';
+import 'package:hussam_clinc/db/dbdate.dart';
+import 'package:image_picker/image_picker.dart';
+import '../../db/patients/dbtreatmentplans.dart';
+import '../../db/patients/dbinvoices.dart';
+import '../../model/patients/TreatmentPlanModel.dart';
+import '../../model/patients/InvoiceModel.dart';
+import '../../model/DatesModel.dart';
+import '../../widgets/dental_chart.dart';
+import '../../db/accounting/vouchers/dbvouchers.dart';
+import '../../model/accounting/VoucherModel.dart';
+import 'package:path/path.dart' as p;
+import 'dart:io';
 
 class PageAddCostumers extends StatefulWidget {
   const PageAddCostumers({super.key});
@@ -49,9 +66,62 @@ class _PageAddCostumersState extends State<PageAddCostumers> {
   var _costumer_lactating = false, _costumer_lactating_Ex = "";
   var _costumer_contraception = false, _costumer_contraception_Ex = "";
 
-  static const List<Tab> myTabs = <Tab>[
+  // New Variables for additional tabs
+  List<PatienHealthtDoctorModel> allPHD = [];
+  List<bool> PHD_edit = [];
+  List<String> imageUrls = [];
+  List<String> listDoctors = [];
+  String _currentTreatmentPlan = "";
+  List<TreatmentPlanModel> treatmentPlans = [];
+  DbTreatmentPlans dbTreatmentPlans = DbTreatmentPlans();
+  DbInvoices dbInvoices = DbInvoices();
+  DbDate dbDate = DbDate();
+  List<DateModel> _patientAppointments = [];
+  List<InvoiceModel> _patientInvoices = [];
+  List<VoucherModel> _patientVouchers = [];
+  final ImagePicker picker = ImagePicker();
+  XFile? imageFile;
+  var numberFormat = tt.NumberFormat("00000", "en_US");
+
+  final List<String> commonTreatments = [
+    "فحص دوري (Checkup)",
+    "تشخيص شامل (Diagnosis)",
+    "تنظيف أسنان (Scaling)",
+    "تلميع أسنان (Polishing)",
+    "حشوة كمبوزيت (Composite Filling)",
+    "حشوة أملغم (Amalgam Filling)",
+    "حشوة مؤقتة (Temporary Filling)",
+    "علاج عصب - جلسة واحدة (Root Canal - Single)",
+    "علاج عصب - جلسات متعددة (Root Canal - Multi)",
+    "إعادة علاج عصب (Re-Root Canal)",
+    "خلع بسيط (Simple Extraction)",
+    "خلع جراحي (Surgical Extraction)",
+    "خلع ضرس العقل (Wisdom Tooth Extraction)",
+    "قص اللثة (Gingivectomy)",
+    "تلبيسة زيركون (Zirconia Crown)",
+    "تلبيسة بورسلين (Porcelain Crown)",
+    "جسر أسنان (Dental Bridge)",
+    "فينيير (Veneers)",
+    "زراعة سن (Dental Implant)",
+    "تطعيم عظمي (Bone Graft)",
+    "تبييض أسنان (Teeth Whitening)",
+    "واقي ليلي (Night Guard)",
+    "تقويم أسنان (Orthodontics)",
+    "حافظ مسافة (Space Maintainer)",
+    "صورة أشعة صغيرة (Periapical X-Ray)",
+    "صورة بانوراما (Panorama X-Ray)",
+    "طقم أسنان كامل (Full Denture)",
+    "طقم أسنان جزئي (Partial Denture)",
+  ];
+
+  List<Tab> get myTabs => const <Tab>[
     Tab(text: 'معلومات عامة'),
     Tab(text: 'معلومات صحية'),
+    Tab(text: 'الخطة العلاجية'),
+    Tab(text: 'تفاصيل العلاج'),
+    Tab(text: 'صور الأسنان'),
+    Tab(text: 'المواعيد'),
+    Tab(text: 'كشف الحساب'),
   ];
 
   bool repeatCheck = false;
@@ -133,6 +203,10 @@ class _PageAddCostumersState extends State<PageAddCostumers> {
         ));
         repeatCheck = true;
         AllPatientList();
+        if (allPatient.isNotEmpty) {
+          paint_id = allPatient.last.id;
+        }
+        _loadPatientData();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           action: SnackBarAction(
@@ -289,8 +363,114 @@ class _PageAddCostumersState extends State<PageAddCostumers> {
 
   @override
   void initState() {
-    // TODO: implement initState
     super.initState();
+    selecedDoctorList();
+  }
+
+  void selecedDoctorList() {
+    DbEmployee dbEmployee = DbEmployee();
+    dbEmployee.allEmployeesM().then((employees) {
+      for (var doctor in employees) {
+        if (doctor.jop == 'دكتور') {
+          setState(() {
+            if (!listDoctors.contains(doctor.name.toString())) {
+              listDoctors.add(doctor.name.toString());
+            }
+          });
+        }
+      }
+    });
+  }
+
+  Map<String, List<int>> getGroupedPlannedTreatments() {
+    Map<String, List<int>> grouped = {};
+    for (var plan in treatmentPlans) {
+      if (!plan.isCompleted) {
+        if (!grouped.containsKey(plan.treatmentName)) {
+          grouped[plan.treatmentName] = [];
+        }
+        grouped[plan.treatmentName]!.add(int.parse(plan.toothNumber));
+      }
+    }
+    return grouped;
+  }
+
+  Future<void> _loadPatientData() async {
+    if (paint_id == 0) return;
+
+    // Load treatments
+    DbPatientHealthDoctor dbPHD = DbPatientHealthDoctor();
+    dbPHD.searchByPatientId(paint_id).then((value) {
+      setState(() {
+        allPHD = value;
+        PHD_edit = List.generate(allPHD.length, (index) => false);
+        for (var record in value) {
+          if (record.treatment.contains("[الخطة العلاجية:")) {
+            _currentTreatmentPlan = record.treatment;
+            break;
+          }
+        }
+      });
+    });
+
+    // Load images
+    DbPicture dbPicture = DbPicture();
+    dbPicture.searchPictureByPatientId(paint_id.toString()).then((picList) {
+      setState(() {
+        imageUrls = picList.map((pic) => pic.pictureLocation).toList();
+      });
+    });
+
+    // Load appointments
+    List<DateModel> allAppts = await dbDate.alldate();
+    setState(() {
+      _patientAppointments = allAppts
+          .where((d) => d.costumerId == paint_id.toString())
+          .toList();
+    });
+
+    // Load invoices
+    List<InvoiceModel> invoices = await dbInvoices.getInvoicesByPatient(paint_id);
+    setState(() {
+      _patientInvoices = invoices;
+    });
+
+    // Load vouchers
+    String accId = paint_id.toString();
+    try {
+      final p = allPatient.firstWhere((p) => p.id == paint_id);
+      accId = p.fileNo;
+    } catch (_) {}
+
+    final res = await DbVouchers().getVouchersByAccount(accId);
+    final List<Map<String, dynamic>> finalRes = List.from(res);
+    // Add old format if exists (by ID)
+    if (accId != paint_id.toString()) {
+      final oldRes = await DbVouchers().getVouchersByAccount(paint_id.toString());
+      for (var v in oldRes) {
+        if (!finalRes.any((element) => element['voucher_id'] == v['voucher_id'])) {
+          finalRes.add(v);
+        }
+      }
+    }
+    setState(() {
+      _patientVouchers = finalRes.map((e) => VoucherModel.fromMap(e)).toList();
+    });
+
+    // Load Treatment Plans
+    _loadTreatmentPlans();
+  }
+
+  Future<void> _loadTreatmentPlans() async {
+    try {
+      List<TreatmentPlanModel> plans =
+          await dbTreatmentPlans.getTreatmentPlansByPatient(paint_id);
+      setState(() {
+        treatmentPlans = plans;
+      });
+    } catch (e) {
+      debugPrint("Error loading treatment plans: $e");
+    }
   }
 
   InputDecoration inputDecoration(IconData icon, String hintText) {
@@ -350,7 +530,8 @@ class _PageAddCostumersState extends State<PageAddCostumers> {
             title: const Text('إضافة المرضى',
                 style: TextStyle(color: Colors.white)),
             backgroundColor: const Color(0xFF167774),
-            bottom: const TabBar(
+            bottom: TabBar(
+              isScrollable: true,
               tabs: myTabs,
               labelStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               labelColor: Colors.white,
@@ -363,8 +544,6 @@ class _PageAddCostumersState extends State<PageAddCostumers> {
             ),
           ),
           body: TabBarView(
-            // controller:_tabController,
-            // clipBehavior: Clip.hardEdge,
             children: [
               Container(
                 child: FisrtPage(context),
@@ -372,6 +551,11 @@ class _PageAddCostumersState extends State<PageAddCostumers> {
               Container(
                 child: SecondPage(context),
               ),
+              Container(child: FivePage(context)),
+              Container(child: ThirdPage(context)),
+              Container(child: FourPage(context)),
+              Container(child: SixPage(context)),
+              Container(child: SevenPage(context)),
             ],
           ),
         ),
@@ -1486,6 +1670,489 @@ class _PageAddCostumersState extends State<PageAddCostumers> {
       initialDate: projectStartDate,
       firstDate: DateTime(1930),
       lastDate: DateTime(2520),
+    );
+  }
+
+  Widget _buildNotSavedMessage() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.info_outline, size: 80, color: Colors.amber),
+          SizedBox(height: 20),
+          Text(
+            "يرجى حفظ البيانات الشخصية للمريض أولاً",
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          Text("لتتمكن من الوصول لهذه التبويبات"),
+        ],
+      ),
+    );
+  }
+
+  Widget FivePage(BuildContext context) {
+    if (paint_id == 1 && repeatCheck == false) return _buildNotSavedMessage();
+    return Container(
+      color: Colors.white,
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text("الخطة العلاجية المقترحة",
+                  style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF167774))),
+              const Divider(thickness: 2),
+              DentalChartWidget(
+                initialTreatmentText: _currentTreatmentPlan,
+                doctors: listDoctors,
+                onChanged: (val) => setState(() => _currentTreatmentPlan = val),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () {
+                  // Save logic would go here, similar to PageEditCostumers
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("تم تحديث الرسم البياني")));
+                },
+                child: const Text("حفظ التغييرات في الرسم"),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget ThirdPage(BuildContext context) {
+    if (paint_id == 1 && repeatCheck == false) return _buildNotSavedMessage();
+    return Container(
+      color: Colors.grey.shade100,
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: const Color(0xFF167774),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text("سجل الزيارات والعمليات",
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold)),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    // Logic to add a new visit record
+                    DbPatientHealthDoctor dbPHD = DbPatientHealthDoctor();
+                    PatienHealthtDoctorModel newRecord = PatienHealthtDoctorModel({
+                      "PHD_id": 0,
+                      "PHD_patientId": paint_id.toString(),
+                      "PHD_doctorId": "1",
+                      "PHD_doctorName": listDoctors.isNotEmpty ? listDoctors[0] : "طبيب",
+                      "PHD_treatment": "",
+                      "PHD_date": "${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}",
+                    });
+                    await dbPHD.addPHD(
+                      newRecord.patientId,
+                      newRecord.doctorId,
+                      newRecord.doctorName,
+                      newRecord.date,
+                      newRecord.treatment,
+                      "", // Diagnosis
+                    );
+                    _loadPatientData();
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text("إضافة زيارة"),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: allPHD.isEmpty
+                ? const Center(child: Text("لا توجد زيارات مسجلة لهذا المريض"))
+                : ListView.builder(
+                    itemCount: allPHD.length,
+                    itemBuilder: (context, i) {
+                      return Card(
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: ExpansionTile(
+                          title: Text("زيارة بتاريخ: ${allPHD[i].date}"),
+                          subtitle: Text("الطبيب: ${allPHD[i].doctorName}"),
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                children: [
+                                  TextFormField(
+                                    initialValue: allPHD[i].treatment,
+                                    maxLines: 3,
+                                    decoration: const InputDecoration(labelText: "تفاصيل العلاج"),
+                                    onChanged: (val) => allPHD[i].treatment = val,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  ElevatedButton(
+                                    onPressed: () async {
+                                      await DbPatientHealthDoctor().updatePHD(allPHD[i].id, allPHD[i]);
+                                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تم الحفظ")));
+                                    },
+                                    child: const Text("حفظ التعديلات"),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget FourPage(BuildContext context) {
+    if (paint_id == 1 && repeatCheck == false) return _buildNotSavedMessage();
+    return Scaffold(
+      backgroundColor: const Color(0xFF1D9D99),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: Colors.white,
+        onPressed: () => _showImageSourceActionSheet(context),
+        child: const Icon(Icons.add_a_photo, color: Color(0xFF1D9D99)),
+      ),
+      body: imageUrls.isEmpty
+          ? const Center(child: Text("لا توجد صور ملفقة بعد", style: TextStyle(color: Colors.white)))
+          : GridView.builder(
+              padding: const EdgeInsets.all(12),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+              ),
+              itemCount: imageUrls.length,
+                  itemBuilder: (context, index) {
+                    String fileName = imageUrls[index].split(RegExp(r'[\\/]')).last;
+                    String validPath = p.join(extPicFolder, fileName);
+                    File imageFileObj = File(validPath);
+
+                    // Fallback for legacy images stored in the root /pic/ directory
+                    if (!imageFileObj.existsSync()) {
+                      final legacyPath = p.join(p.dirname(extPicFolder), fileName);
+                      if (File(legacyPath).existsSync()) {
+                        imageFileObj = File(legacyPath);
+                      }
+                    }
+
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.file(imageFileObj, fit: BoxFit.cover),
+                        ),
+                    Positioned(
+                      top: 5,
+                      right: 5,
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            imageUrls.removeAt(index);
+                          });
+                        },
+                        child: const CircleAvatar(
+                          radius: 12,
+                          backgroundColor: Colors.red,
+                          child: Icon(Icons.close, size: 16, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+    );
+  }
+
+  void _showImageSourceActionSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('المعرض'),
+              onTap: () {
+                _pickImage(ImageSource.gallery);
+                Navigator.of(context).pop();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera),
+              title: const Text('الكاميرا'),
+              onTap: () {
+                _pickImage(ImageSource.camera);
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    final XFile? pickedFile = await picker.pickImage(source: source);
+    if (pickedFile != null) {
+      // Ensure the pic directory exists
+      final picDir = Directory(extPicFolder);
+      if (!await picDir.exists()) {
+        await picDir.create(recursive: true);
+      }
+
+      String picName = "${(imageUrls.length + 1).toString().padLeft(4, '0')}-${paint_id}.jpg";
+      String fullPath = p.join(extPicFolder, picName);
+      
+      try {
+        await File(pickedFile.path).copy(fullPath);
+      } catch (e) {
+        await pickedFile.saveTo(fullPath);
+      }
+
+      DbPicture dbPicture = DbPicture();
+      await dbPicture.addPicture(fullPath, paint_id.toString());
+      
+      setState(() {
+        imageUrls.add(fullPath);
+      });
+    }
+  }
+
+  Widget SixPage(BuildContext context) {
+    if (paint_id == 1 && repeatCheck == false) return _buildNotSavedMessage();
+    return Container(
+      color: Colors.white,
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: const Color(0xFF167774),
+            child: const Row(
+              children: [
+                Icon(Icons.calendar_month, color: Colors.white),
+                SizedBox(width: 10),
+                Text(
+                  "سجل المواعيد",
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _patientAppointments.isEmpty
+                ? const Center(child: Text("لا توجد مواعيد مسجلة"))
+                : ListView.builder(
+                    itemCount: _patientAppointments.length,
+                    itemBuilder: (context, index) {
+                      final appt = _patientAppointments[index];
+                      return Card(
+                        margin: const EdgeInsets.all(8),
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: const Color(0xFF1D9D99),
+                            child: Text((index + 1).toString(),
+                                style: const TextStyle(color: Colors.white)),
+                          ),
+                          title: Text("${appt.dateStart}"),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text("الدكتور: ${appt.doctorName}"),
+                              if (appt.note.isNotEmpty)
+                                Text("ملاحظات: ${appt.note}",
+                                    style: const TextStyle(fontSize: 12)),
+                            ],
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () async {
+                              bool? confirm = await showDialog(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: const Text("حذف الموعد"),
+                                  content: const Text("هل أنت متأكد؟"),
+                                  actions: [
+                                    TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, false),
+                                        child: const Text("إلغاء")),
+                                    TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, true),
+                                        child: const Text("حذف")),
+                                  ],
+                                ),
+                              );
+                              if (confirm == true) {
+                                await dbDate.deletedate(appt.id);
+                                _loadPatientData();
+                              }
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget SevenPage(BuildContext context) {
+    if (paint_id == 1 && repeatCheck == false) return _buildNotSavedMessage();
+    
+    // Combine and sort all financial records
+    List<dynamic> allRecords = [..._patientInvoices, ..._patientVouchers];
+
+    // Sort logic (dd/MM/yyyy format)
+    allRecords.sort((a, b) {
+      String dateA = a is InvoiceModel ? a.invoiceDate : (a as VoucherModel).date;
+      String dateB = b is InvoiceModel ? b.invoiceDate : (b as VoucherModel).date;
+
+      try {
+        DateTime dtA = tt.DateFormat("dd/MM/yyyy").parse(dateA.split(' ')[0]);
+        DateTime dtB = tt.DateFormat("dd/MM/yyyy").parse(dateB.split(' ')[0]);
+        return dtA.compareTo(dtB);
+      } catch (e) {
+        return dateA.compareTo(dateB);
+      }
+    });
+
+    double totalInvoices = _patientInvoices.fold(0.0, (sum, item) => sum + item.treatmentCost);
+
+    double totalReceipts = _patientVouchers
+        .where((v) => v.className == 'قبض')
+        .fold(0.0, (sum, v) => sum + (double.tryParse(v.payment) ?? 0.0));
+
+    double totalPayments = _patientVouchers
+        .where((v) => v.className == 'صرف')
+        .fold(0.0, (sum, v) => sum + (double.tryParse(v.payment) ?? 0.0));
+
+    double remainingBalance = totalInvoices + totalPayments - totalReceipts;
+
+    return Container(
+      color: Colors.white,
+      child: Column(
+        children: [
+          // Header Summary
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blueGrey[50],
+              border: const Border(bottom: BorderSide(color: Color(0xFFD6D6D6))),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildSummaryItem("إجمالي الفواتير", totalInvoices, Colors.blue),
+                _buildSummaryItem("إجمالي المدفوعات", totalReceipts, Colors.green),
+                _buildSummaryItem("الرصيد المتبقي", remainingBalance, Colors.red),
+              ],
+            ),
+          ),
+
+          Expanded(
+            child: allRecords.isEmpty
+                ? const Center(child: Text("لا توجد سجلات مالية مسجلة"))
+                : ListView.builder(
+                    itemCount: allRecords.length,
+                    itemBuilder: (context, index) {
+                      final record = allRecords[index];
+                      if (record is InvoiceModel) {
+                        return _buildInvoiceCard(record);
+                      } else {
+                        return _buildVoucherCard(record as VoucherModel);
+                      }
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInvoiceCard(InvoiceModel inv) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      elevation: 2,
+      child: ListTile(
+        leading: const CircleAvatar(
+          backgroundColor: Colors.blue,
+          child: Icon(Icons.receipt, color: Colors.white),
+        ),
+        title: Text("${inv.treatmentName} (السن ${inv.toothNumber})", style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text("فاتورة علاج | التاريخ: ${inv.invoiceDate.split(' ')[0]}"),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              "${inv.treatmentCost} ج.م",
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue),
+            ),
+            if (inv.isPaid)
+              const Text("مدفوع", style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold))
+            else
+              const Text("غير مدفوع", style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVoucherCard(VoucherModel v) {
+    bool isReceipt = v.className == 'قبض';
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      elevation: 2,
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: isReceipt ? Colors.green : Colors.orange,
+          child: Icon(isReceipt ? Icons.add_card : Icons.payment, color: Colors.white),
+        ),
+        title: Text(isReceipt ? "إيصال قبض" : "سند صرف", style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text("${v.discription} | التاريخ: ${v.date}"),
+        trailing: Text(
+          "${v.payment} ج.م",
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            color: isReceipt ? Colors.green : Colors.orange,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryItem(String label, double value, Color color) {
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        Text(
+          value.toStringAsFixed(2),
+          style: TextStyle(
+              fontSize: 18, fontWeight: FontWeight.bold, color: color),
+        ),
+      ],
     );
   }
 }

@@ -1,69 +1,60 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:hussam_clinc/pages/accounting/invoices/SalesInvoices.dart';
+import 'package:hussam_clinc/model/accounting/invoices/InvoicesModel.dart' as accModel;
+import 'package:hussam_clinc/model/accounting/invoices/InvoicesDetailModel.dart' as accDetail;
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:flutter/material.dart' as material;
 import 'package:pdf/pdf.dart';
 import '../global_var/globals.dart';
 
 class reportSalesInvoicePDF {
-  late PlutoGridStateManager stateManager;
+  PlutoGridStateManager? stateManager;
+  accModel.InvoicesModel? invoice;
+
   reportSalesInvoicePDF();
+  reportSalesInvoicePDF.fromInvoice(this.invoice);
 
   Future<void> inti() async {
-    var fontTableDetail1 =
-        await rootBundle.load("assets/fonts/ArbFONTS-Amiri.ttf");
+    var fontTableDetail1 = await rootBundle.load("assets/fonts/ArbFONTS-Amiri.ttf");
     final fontTableDetail = pw.Font.ttf(fontTableDetail1);
-    var fontTableHeader1 =
-        await rootBundle.load("assets/fonts/ArbFONTS-Amiri-Bold.ttf");
+    var fontTableHeader1 = await rootBundle.load("assets/fonts/ArbFONTS-Amiri-Bold.ttf");
     final pw.Font fontTableHeader = pw.Font.ttf(fontTableHeader1);
-    var fontPage1 =
-        await rootBundle.load("assets/fonts/ArbFONTS-Amiri-Bold.ttf");
+    var fontPage1 = await rootBundle.load("assets/fonts/ArbFONTS-Amiri-Bold.ttf");
     final pw.Font fontPage = pw.Font.ttf(fontPage1);
+    
     final pdf = pw.Document();
-    final image = material.MemoryImage(
-        (await rootBundle.load('assets/images/logo.png')).buffer.asUint8List(),
-        scale: .3);
+    final image = pw.MemoryImage(
+        (await rootBundle.load('assets/images/logo.png')).buffer.asUint8List());
+        
     createPdfDocument(pdf, fontPage, fontTableDetail, image, fontTableHeader);
     List<int> bytes = await pdf.save();
-    savePDFFile(bytes, ' فاتورة بيع رقم_${VMSalesInvoice.MaxInvoices}.pdf');
+    
+    String invNo = invoice != null ? invoice!.id.toString() : VMSalesInvoice.MaxInvoices;
+    savePDFFile(bytes, ' فاتورة بيع رقم_${invNo.padLeft(6, '0')}.pdf');
   }
 
   void createPdfDocument(pw.Document pdf, pw.Font fontPage,
-      pw.Font fontTableDetail, MemoryImage image, pw.Font fontTableHeader) {
+      pw.Font fontTableDetail, pw.MemoryImage image, pw.Font fontTableHeader) {
     pdf.addPage(pw.MultiPage(
-        header: (pw.Context context) {
-          return Header(fontPage, image);
-        },
-        theme: pw.ThemeData(
-          defaultTextStyle: pw.TextStyle(font: fontTableDetail),
-        ),
+        header: (pw.Context context) => Header(fontPage, image),
+        theme: pw.ThemeData(defaultTextStyle: pw.TextStyle(font: fontTableDetail)),
         textDirection: pw.TextDirection.rtl,
         pageFormat: PdfPageFormat.a5.landscape,
-        margin: const pw.EdgeInsets.only(
-            left: 20, right: 20, top: 5, bottom: 5), // This is the page margin
+        margin: const pw.EdgeInsets.only(left: 20, right: 20, top: 5, bottom: 5),
         build: (pw.Context context) {
           return <pw.Widget>[
-            pw.Header(
-              text: '',
-            ),
-            // Details
+            pw.Header(text: ''),
             FistData(fontPage),
             pw.Divider(color: PdfColors.white, thickness: 1, height: 2),
-            // Items Table
             buildTableExportItems(fontPage),
             pw.Header(text: ''),
-            // Divider
-            //pw.Divider(color: PdfColors.white, thickness: 1,height:2 ),
             FinalData(fontPage),
             pw.Divider(color: PdfColors.white, thickness: 1, height: 2),
-            // pw.Paragraph(text: "التوقيع",style:  pwTableHeadingTextStyle(fontTableHeader,20)),
           ];
         }));
   }
 
-  pw.Table Header(pw.Font fontPage, MemoryImage image) {
+  pw.Table Header(pw.Font fontPage, pw.MemoryImage image) {
     return pw.Table(
       children: [
         pw.TableRow(
@@ -71,52 +62,23 @@ class reportSalesInvoicePDF {
             pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Text(
-                  'Dental Clinic',
-                  style: pw.TextStyle(
-                      font: fontPage,
-                      fontSize: 16,
-                      color: PdfColors.deepOrange400),
-                ),
-                pw.Text(
-                  'Dr.Hussam M. Aydi',
-                  style: pw.TextStyle(
-                      font: fontPage,
-                      fontSize: 16,
-                      color: PdfColors.deepOrange400),
-                ),
+                pw.Text('Dental Clinic', style: pw.TextStyle(font: fontPage, fontSize: 16, color: PdfColors.deepOrange400)),
+                pw.Text('Dr.Hussam M. Aydi', style: pw.TextStyle(font: fontPage, fontSize: 16, color: PdfColors.deepOrange400)),
               ],
             ),
             pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               mainAxisAlignment: pw.MainAxisAlignment.center,
-              verticalDirection: pw.VerticalDirection.up,
               children: [
-                pw.Center(
-                  child: pw.Text('فاتورة بيع',
-                      style: pwTableHeadingTextStyle(fontPage, 14)),
-                ),
-                pw.Image(pw.MemoryImage(image.bytes), height: 50, width: 50),
+                pw.Center(child: pw.Text('فاتورة بيع', style: pwTableHeadingTextStyle(fontPage, 14))),
+                pw.Image(image, height: 50, width: 50),
               ],
             ),
             pw.Column(
-              mainAxisAlignment: pw.MainAxisAlignment.center,
               crossAxisAlignment: pw.CrossAxisAlignment.end,
               children: [
-                pw.Text(
-                  'عيادة طب الفم والأسنان',
-                  style: pw.TextStyle(
-                      font: fontPage,
-                      fontSize: 16,
-                      color: PdfColors.deepOrange400),
-                ),
-                pw.Text(
-                  'د.حسام محمد العايدي',
-                  style: pw.TextStyle(
-                      font: fontPage,
-                      fontSize: 16,
-                      color: PdfColors.deepOrange400),
-                ),
+                pw.Text('عيادة طب الفم والأسنان', style: pw.TextStyle(font: fontPage, fontSize: 16, color: PdfColors.deepOrange400)),
+                pw.Text('د.حسام محمد العايدي', style: pw.TextStyle(font: fontPage, fontSize: 16, color: PdfColors.deepOrange400)),
               ],
             ),
           ],
@@ -126,51 +88,36 @@ class reportSalesInvoicePDF {
   }
 
   pw.Table FistData(pw.Font fontPage) {
-    return pw.Table(// This is the starting widget for the table
-        children: [
+    String id = invoice?.id.toString().padLeft(6, '0') ?? VMSalesInvoice.MaxInvoices.padLeft(6, '0');
+    String currency = invoice?.currency ?? VMSalesInvoice.currencySelect;
+    String accId = invoice?.account_no ?? VMSalesInvoice.AccountingPerson_select_id;
+    String accName = invoice?.account_name ?? VMSalesInvoice.AccountingPerson_select_name;
+    String date = invoice?.date ?? '${VMSalesInvoice.dateDate.day}/${VMSalesInvoice.dateDate.month}/${VMSalesInvoice.dateDate.year}';
+    String time = invoice?.time ?? '${VMSalesInvoice.Selectedtime.hour}:${VMSalesInvoice.Selectedtime.minute}';
+
+    return pw.Table(children: [
       pw.TableRow(
         children: [
           pw.Padding(
             padding: const pw.EdgeInsets.symmetric(vertical: 10, horizontal: 5),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.center,
-              children: [
-                pw.Text(
-                  ' رقم الفاتورة : ${VMSalesInvoice.MaxInvoices}',
-                  style: pwTableHeadingTextStyle(fontPage, 14),
-                ),
-                pw.Text(" عملة الفاتورة :  ${VMSalesInvoice.currencySelect}",
-                    style: pwTableHeadingTextStyle(fontPage, 14)),
-              ],
-            ),
+            child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.center, children: [
+              pw.Text(' رقم الفاتورة : $id', style: pwTableHeadingTextStyle(fontPage, 14)),
+              pw.Text(" عملة الفاتورة :  $currency", style: pwTableHeadingTextStyle(fontPage, 14)),
+            ]),
           ),
           pw.Padding(
             padding: const pw.EdgeInsets.symmetric(vertical: 10, horizontal: 5),
-            child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.center,
-                children: [
-                  pw.Text(
-                      " رقم المريض : ${VMSalesInvoice.AccountingPerson_select_id}",
-                      style: pwTableHeadingTextStyle(fontPage, 14)),
-                  pw.Text(
-                    ' الساعة: ${VMSalesInvoice.Selectedtime.hour}:${VMSalesInvoice.Selectedtime.minute}',
-                    style: pwTableHeadingTextStyle(fontPage, 14),
-                  ),
-                ]),
+            child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.center, children: [
+              pw.Text(" رقم المريض : $accId", style: pwTableHeadingTextStyle(fontPage, 14)),
+              pw.Text(' الساعة: $time', style: pwTableHeadingTextStyle(fontPage, 14)),
+            ]),
           ),
           pw.Padding(
-            padding: pw.EdgeInsets.all(5),
-            child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.center,
-                children: [
-                  pw.Text(
-                      " اسم المريض : ${VMSalesInvoice.AccountingPerson_select_name}",
-                      style: pwTableHeadingTextStyle(fontPage, 14)),
-                  pw.Text(
-                    ' التاريخ: ${VMSalesInvoice.dateDate.day}/${VMSalesInvoice.dateDate.month}/${VMSalesInvoice.dateDate.year}',
-                    style: pwTableHeadingTextStyle(fontPage, 14),
-                  ),
-                ]),
+            padding: const pw.EdgeInsets.all(5),
+            child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.center, children: [
+              pw.Text(" اسم المريض : $accName", style: pwTableHeadingTextStyle(fontPage, 14)),
+              pw.Text(' التاريخ: $date', style: pwTableHeadingTextStyle(fontPage, 14)),
+            ]),
           ),
         ],
       ),
@@ -178,23 +125,17 @@ class reportSalesInvoicePDF {
   }
 
   pw.Table FinalData(pw.Font fontPage) {
-    return pw.Table(// This is the starting widget for the table
-        children: [
+    String total = invoice?.amount_all ?? VMSalesInvoice.amount_all.toString();
+    String currency = invoice?.currency ?? VMSalesInvoice.currencySelect;
+    
+    return pw.Table(children: [
       pw.TableRow(
         children: [
           pw.Padding(
             padding: const pw.EdgeInsets.symmetric(vertical: 10, horizontal: 5),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.end,
-              mainAxisAlignment: pw.MainAxisAlignment.start,
-              children: [
-                pw.Text(
-                  '    الفاتورة الإجمالية : ${VMSalesInvoice.amount_all} ${VMSalesInvoice.currencySelect} ',
-                  style: pwTableHeadingTextStyle(fontPage, 14,
-                      color: const PdfColor(1, 0, 0, .8)),
-                ),
-              ],
-            ),
+            child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
+              pw.Text('    الفاتورة الإجمالية : $total $currency ', style: pwTableHeadingTextStyle(fontPage, 14, color: const PdfColor(1, 0, 0, .8))),
+            ]),
           ),
           remaningMony(fontPage),
           payedMony(fontPage),
@@ -204,220 +145,94 @@ class reportSalesInvoicePDF {
   }
 
   pw.Padding remaningMony(pw.Font fontPage) {
-    if (VMSalesInvoice.remaining > 0) {
-      return pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(vertical: 10, horizontal: 5),
-        child:
-            pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
-          pw.Text(
-            'قيمة الخصم : ${VMSalesInvoice.disscount} ${VMSalesInvoice.currencySelect} ',
-            style: pwTableHeadingTextStyle(fontPage, 12),
-          ),
-          pw.Text(
-            'المبلغ المتبقي : ${VMSalesInvoice.remaining} ${VMSalesInvoice.currencySelect} ',
-            style: pwTableHeadingTextStyle(fontPage, 12, color: PdfColors.red),
-          ),
-        ]),
-      );
-    } else {
-      return pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(vertical: 10, horizontal: 5),
-        child:
-            pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
-          pw.Text(
-            '   قيمة الخصم : ${VMSalesInvoice.disscount} ${VMSalesInvoice.currencySelect} ',
-            style: pwTableHeadingTextStyle(fontPage, 14),
-          ),
-        ]),
-      );
-    }
-  }
-
-  pw.Padding payedMony(pw.Font fontPage) {
-    List<pw.Widget> children = [];
-    children.add(pw.Text(
-        'مبلغ الفاتورة : ${VMSalesInvoice.amount} ${VMSalesInvoice.currencySelect} ',
-        style: pwTableHeadingTextStyle(fontPage, 12)));
-
-    if (VMSalesInvoice.payment > 0) {
-      children.add(pw.Text(
-          'المدفوع نقداً : ${VMSalesInvoice.payment} ${VMSalesInvoice.payment_currency} ',
-          style: pwTableHeadingTextStyle(fontPage, 12, color: PdfColors.blue)));
-    }
-
-    if (VMSalesInvoice.payment_app > 0) {
-      children.add(pw.Text(
-          'المدفوع تطبيق : ${VMSalesInvoice.payment_app} ${VMSalesInvoice.payment_currency} ',
-          style: pwTableHeadingTextStyle(fontPage, 12, color: PdfColors.blue)));
-    }
+    double rem = double.tryParse(invoice?.remaining ?? VMSalesInvoice.remaining.toString()) ?? 0;
+    String disc = invoice?.disscount ?? VMSalesInvoice.disscount.toString();
+    String curr = invoice?.currency ?? VMSalesInvoice.currencySelect;
 
     return pw.Padding(
       padding: const pw.EdgeInsets.symmetric(vertical: 10, horizontal: 5),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.end,
-        children: children,
-      ),
+      child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
+        pw.Text('قيمة الخصم : $disc $curr ', style: pwTableHeadingTextStyle(fontPage, 12)),
+        if (rem > 0)
+          pw.Text('المبلغ المتبقي : $rem $curr ', style: pwTableHeadingTextStyle(fontPage, 12, color: PdfColors.red)),
+      ]),
     );
   }
 
-  pw.TableBorder tableBorder() {
-    return const pw.TableBorder(
-        right: pw.BorderSide(
-            width: 2,
-            color: PdfColor(0, 0, 0, .8),
-            style: pw.BorderStyle.solid),
-        left: pw.BorderSide(
-            width: 2,
-            color: PdfColor(0, 0, 0, .8),
-            style: pw.BorderStyle.solid),
-        top: pw.BorderSide(
-            width: 2,
-            color: PdfColor(0, 0, 0, .8),
-            style: pw.BorderStyle.solid),
-        bottom: pw.BorderSide(
-            width: 2,
-            color: PdfColor(0, 0, 0, .8),
-            style: pw.BorderStyle.solid),
-        horizontalInside: pw.BorderSide(
-            width: 1,
-            color: PdfColor(0, 0, 0, .8),
-            style: pw.BorderStyle.solid),
-        verticalInside: pw.BorderSide(
-            width: 1,
-            color: PdfColor(0, 0, 0, .8),
-            style: pw.BorderStyle.solid));
+  pw.Padding payedMony(pw.Font fontPage) {
+    String amt = invoice?.amount ?? VMSalesInvoice.amount.toString();
+    String pay = invoice?.payment ?? VMSalesInvoice.payment.toString();
+    String curr = invoice?.currency ?? VMSalesInvoice.currencySelect;
+    String pCurr = invoice?.payment_currency ?? VMSalesInvoice.payment_currency;
+
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 10, horizontal: 5),
+      child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
+        pw.Text('مبلغ الفاتورة : $amt $curr ', style: pwTableHeadingTextStyle(fontPage, 12)),
+        if (double.parse(pay) > 0)
+          pw.Text('المدفوع نقداً : $pay $pCurr ', style: pwTableHeadingTextStyle(fontPage, 12, color: PdfColors.blue)),
+      ]),
+    );
   }
 
   pw.Table buildTableExportItems(pw.Font fontTableDetail) {
-    int noRowsTable = stateManager.rows.length;
+    List<dynamic> items = [];
+    if (stateManager != null) {
+      items = stateManager!.rows;
+    } else if (invoice != null) {
+      items = invoice!.details;
+    }
+
     return pw.Table(
       border: tableBorder(),
-      children: List.generate(
-        noRowsTable + 1,
-        (index) {
-          var i = index - 1;
-          if (i < 0) {
-            return pw.TableRow(
-              decoration: const pw.BoxDecoration(
-                  shape: pw.BoxShape.rectangle,
-                  color: PdfColor(.8, .8, .8, .8)),
-              children: [
-                pw.Column(
-                  children: [
-                    pw.Text('الإجمالي', style: TableTextStyle(fontTableDetail)),
-                  ],
-                ),
-                pw.Column(
-                  children: [
-                    pw.Text('السعر', style: TableTextStyle(fontTableDetail)),
-                  ],
-                ),
-                pw.Column(
-                  children: [
-                    pw.Text('الكمية', style: TableTextStyle(fontTableDetail)),
-                  ],
-                ),
-                pw.Column(
-                  children: [
-                    pw.Text('اسم الصنف',
-                        style: TableTextStyle(fontTableDetail)),
-                  ],
-                ),
-                pw.Column(
-                  children: [
-                    pw.Text('الرقم', style: TableTextStyle(fontTableDetail)),
-                  ],
-                ),
-              ],
-            );
-          } else if (i < noRowsTable && i >= 0) {
-            return pw.TableRow(
-              children: [
-                pw.Column(
-                  children: [
-                    pw.Text(
-                        stateManager.rows[i].cells['total']!.value.toString(),
-                        style: TableTextStyle(fontTableDetail)),
-                  ],
-                ),
-                pw.Column(
-                  children: [
-                    pw.Text(
-                        stateManager.rows[i].cells['price']!.value.toString(),
-                        style: TableTextStyle(fontTableDetail)),
-                  ],
-                ),
-                pw.Column(
-                  children: [
-                    pw.Text(stateManager.rows[i].cells['qty']!.value.toString(),
-                        style: TableTextStyle(fontTableDetail)),
-                  ],
-                ),
-                pw.Column(
-                  children: [
-                    pw.Text(
-                        stateManager.rows[i].cells['name']!.value.toString(),
-                        style: TableTextStyle(fontTableDetail)),
-                  ],
-                ),
-                pw.Column(
-                  children: [
-                    pw.Text(stateManager.rows[i].cells['id']!.value.toString(),
-                        style: TableTextStyle(fontTableDetail)),
-                  ],
-                ),
-              ],
-            );
-          }
-          return pw.TableRow(children: [
-            pw.Column(
-              children: [
-                pw.Text(index.toString(),
-                    style: TableTextStyle(fontTableDetail)),
-              ],
-            ),
-          ]);
-        },
-      ),
+      children: List.generate(items.length + 1, (index) {
+        if (index == 0) {
+          return pw.TableRow(
+            decoration: const pw.BoxDecoration(color: PdfColor(.8, .8, .8, .8)),
+            children: [
+              pw.Center(child: pw.Text('الإجمالي', style: TableTextStyle(fontTableDetail))),
+              pw.Center(child: pw.Text('السعر', style: TableTextStyle(fontTableDetail))),
+              pw.Center(child: pw.Text('الكمية', style: TableTextStyle(fontTableDetail))),
+              pw.Center(child: pw.Text('اسم الصنف', style: TableTextStyle(fontTableDetail))),
+              pw.Center(child: pw.Text('الرقم', style: TableTextStyle(fontTableDetail))),
+            ],
+          );
+        }
+        
+        var i = index - 1;
+        String id, name, qty, price, total;
+        
+        if (stateManager != null) {
+          var row = stateManager!.rows[i];
+          id = row.cells['id']?.value.toString() ?? '';
+          name = row.cells['name']?.value.toString() ?? '';
+          qty = row.cells['qty']?.value.toString() ?? '';
+          price = row.cells['price']?.value.toString() ?? '';
+          total = row.cells['total']?.value.toString() ?? '';
+        } else {
+          var det = items[i] as accDetail.InvoicesDetailModel;
+          id = (i+1).toString();
+          name = det.item_name;
+          qty = det.unit_qty;
+          price = det.unit_price;
+          total = det.net_price;
+        }
+
+        return pw.TableRow(
+          children: [
+            pw.Center(child: pw.Text(total, style: TableTextStyle(fontTableDetail))),
+            pw.Center(child: pw.Text(price, style: TableTextStyle(fontTableDetail))),
+            pw.Center(child: pw.Text(qty, style: TableTextStyle(fontTableDetail))),
+            pw.Center(child: pw.Text(name, style: TableTextStyle(fontTableDetail))),
+            pw.Center(child: pw.Text(id, style: TableTextStyle(fontTableDetail))),
+          ],
+        );
+      }),
     );
   }
 
-  pw.TextStyle TableTextStyle(pw.Font font) {
-    return pw.TextStyle(
-      fontSize: 14,
-      font: font,
-    );
-  }
-
-  pw.TextStyle pwTableHeadingTextStyle(pw.Font font, double Fontsize,
-      {PdfColor? color}) {
-    color != null ? const PdfColor(0, 0, 0, .8) : color;
-    return pw.TextStyle(
-        font: font,
-        fontWeight: pw.FontWeight.bold,
-        fontSize: Fontsize,
-        color: color);
-  }
-
-  pw.Padding paddedTextCell(String textContent) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.all(4),
-      child:
-          pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-        pw.Text(textContent, textAlign: pw.TextAlign.left),
-      ]),
-    );
-  }
-
-  pw.Padding paddedHeadingTextCell(String textContent) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.all(4),
-      child: pw.Column(children: [
-        pw.Text(
-          textContent,
-          // style: pwTableHeadingTextStyle(tamilFont),
-        ),
-      ]),
-    );
-  }
+  pw.TableBorder tableBorder() => pw.TableBorder.all(width: 1, color: PdfColors.black);
+  pw.TextStyle TableTextStyle(pw.Font font) => pw.TextStyle(fontSize: 12, font: font);
+  pw.TextStyle pwTableHeadingTextStyle(pw.Font font, double size, {PdfColor? color}) =>
+      pw.TextStyle(font: font, fontWeight: pw.FontWeight.bold, fontSize: size, color: color ?? PdfColors.black);
 }

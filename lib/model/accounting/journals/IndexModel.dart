@@ -79,7 +79,7 @@ class IndexModel {
     "index_selling_price":_selling_price,
     "index_selling_currency": _selling_currency ,
     "index_buying_price":_buying_price,
-    "index _buying_currency": _buying_currency,
+    "index_buying_currency": _buying_currency,
     "index_last_tran_date":_last_tran_date,
     "index_ini_balance": _ini_balance,
   };

@@ -7,17 +7,46 @@ import '../../../main.dart';
 
 class ViewModelJournals {
   ViewModelJournals.impty(){
+    reset();
+  }
+  
+  void reset() {
     dateDate = DateTime.now();
     Selectedtime = TimeOfDay.now();
     currencySelect = "شيكل";
     rate = 1;
-    amount=0; //'قيمة الفاتورة'
-    saving=false;
-    EditeMode=false;
+    amount = 0;
+    saving = false;
+    EditeMode = false;
     rows.clear();
-    Maxjournals =VMGlobal.Maxjournals;
-    MaxInvoices=VMGlobal.MaxInvoices;
-    MaxVouchers=VMGlobal.MaxVouchers;
+    Maxjournals = VMGlobal.Maxjournals;
+    MaxInvoices = VMGlobal.MaxInvoices;
+    MaxVouchers = VMGlobal.MaxVouchers;
+    stateManager = PlutoGridStateManager(
+      columns: columns,
+      rows: rows,
+      gridFocusNode: FocusNode(),
+      scroll: PlutoGridScrollController(),
+    );
+  }
+  
+  void addNewRow() {
+    final int lastIndex = stateManager.refRows.originalList.length;
+    stateManager.insertRows(lastIndex, [
+      PlutoRow(
+        cells: {
+          'id': PlutoCell(value: lastIndex + 1),
+          'id_account': PlutoCell(value: ''),
+          'acc_name': PlutoCell(value: ''),
+          'debit': PlutoCell(value: 0),
+          'credit': PlutoCell(value: 0),
+          'description': PlutoCell(value: ''),
+          'currncey': PlutoCell(value: currencySelect),
+          'rate': PlutoCell(value: rate),
+          'total': PlutoCell(value: 0),
+        },
+      )
+    ]);
   }
   /// Styles and Color
   Color primaryColor = const Color(0xffd0d4d7); //corner
@@ -217,40 +246,143 @@ class ViewModelJournals {
     );
   }
 
-  void EditeAlreadyJournals(String id) {
-    dbJournals.findJournals(id).then((value) {
-      dateDate = DateTime.parse(value.date);
-      Selectedtime =TimeOfDay.fromDateTime(dateDate);
-      currencySelect=value.currency;
-      rate= double.parse(value.rate);
-      description=value.discription;
-      amount= double.parse(value.amount) ; //'قيمة الفاتورة'
-      EditeMode=true;
-      saving=true;
-      Maxjournals= value.id.toString();
-    });
+  Future<void> EditeAlreadyJournals(String id) async {
+    reset(); 
+    final value = await dbJournals.findJournals(id);
+    dateDate = DateTime.parse(value.date);
+    Selectedtime = TimeOfDay.fromDateTime(dateDate);
+    currencySelect = value.currency;
+    rate = double.tryParse(value.rate) ?? 1.0;
+    description = value.discription;
+    amount = double.tryParse(value.amount) ?? 0.0;
+    EditeMode = true;
+    saving = true;
+    Maxjournals = value.id.toString();
+
     rows.clear();
-    dbJournalDetails.searchJournalsDetail(id).then((journalDetails) {
-      int no=0;
-      for (var journalDetail in journalDetails) {
-        no=no+1;
-        rows.add(
-          PlutoRow(
-            cells: {
-              'id': PlutoCell(value: no),
-              'id_account': PlutoCell(value: journalDetail.account_id),
-              'acc_name': PlutoCell(value: journalDetail.account_name),
-              'debit': PlutoCell(value: journalDetail.debit),
-              'credit': PlutoCell(value:journalDetail.credit),
-              'description': PlutoCell(value:journalDetail.description),
-              'currncey': PlutoCell(value: journalDetail.currency),
-              'rate': PlutoCell(value: journalDetail.rate),
-              'total': PlutoCell(value:journalDetail.debit=='0'?  numberFormat.format(double.parse(journalDetail.rate) * double.parse(journalDetail.credit)) :numberFormat.format(double.parse(journalDetail.rate)* double.parse(journalDetail.debit))),
-            },
-          ),
-        );
+    final journalDetails = await dbJournalDetails.searchJournalsDetail(id);
+    int no = 0;
+    for (var journalDetail in journalDetails) {
+      no = no + 1;
+      rows.add(
+        PlutoRow(
+          cells: {
+            'id': PlutoCell(value: no),
+            'id_account': PlutoCell(value: journalDetail.account_id),
+            'acc_name': PlutoCell(value: journalDetail.account_name),
+            'debit': PlutoCell(value: double.tryParse(journalDetail.debit) ?? 0.0),
+            'credit': PlutoCell(value: double.tryParse(journalDetail.credit) ?? 0.0),
+            'description': PlutoCell(value: journalDetail.description),
+            'currncey': PlutoCell(value: journalDetail.currency),
+            'rate': PlutoCell(value: double.tryParse(journalDetail.rate) ?? 1.0),
+            'total': PlutoCell(value: journalDetail.debit == '0'
+                ? double.parse(journalDetail.rate) * double.parse(journalDetail.credit)
+                : double.parse(journalDetail.rate) * double.parse(journalDetail.debit)),
+          },
+        ),
+      );
+    }
+    stateManager.refRows.clear();
+    stateManager.insertRows(0, rows);
+  }
+
+  Future<void> saveJournal() async {
+    try {
+      saving = true;
+      final dateStr = '${dateDate.year}-${dateDate.month.toString().padLeft(2, '0')}-${dateDate.day.toString().padLeft(2, '0')}';
+      final timeStr = '${Selectedtime.hour}:${Selectedtime.minute.toString().padLeft(2, '0')}';
+      
+      // Calculate total amount from debits
+      double totalDebit = 0;
+      for (var row in stateManager.rows) {
+        totalDebit += (row.cells['debit']?.value ?? 0).toDouble();
       }
-    });
+
+      if (EditeMode) {
+        // 1. Update Journal Header
+        await dbJournals.updatejournals(
+          dateStr,
+          timeStr,
+          totalDebit.toString(),
+          currencySelect,
+          rate.toString(),
+          description,
+          Maxjournals,
+        );
+
+        // 2. Refresh Details
+        await dbJournalDetails.deleteJournalDetailsByJournalId(Maxjournals);
+        for (var row in stateManager.rows) {
+          await dbJournalDetails.addjournalDetails(
+            Maxjournals,
+            row.cells['id_account']!.value.toString(),
+            row.cells['acc_name']!.value.toString(),
+            row.cells['debit']!.value.toString(),
+            row.cells['credit']!.value.toString(),
+            row.cells['description']!.value.toString(),
+            row.cells['currncey']!.value.toString(),
+            row.cells['rate']!.value.toString(),
+            row.cells['total']!.value.toString(),
+          );
+        }
+
+        // 3. Sync with Source Records (Invoices/Vouchers)
+        final dbConn = await dbJournals.dbHelper.openDb();
+        
+        // Update linked vouchers
+        await dbConn!.update(
+          'vouchers',
+          {'voucher_payment': totalDebit.toString()},
+          where: 'voucher_journal = ?',
+          whereArgs: [Maxjournals],
+        );
+        
+        // Update linked invoices
+        // Note: For invoices, we update amount_all and net totals
+        await dbConn.update(
+          'invoices',
+          {
+            'invoice_amount': totalDebit.toString(),
+            'invoice_amount_all': totalDebit.toString(),
+          },
+          where: 'invoice_jornal = ?',
+          whereArgs: [Maxjournals],
+        );
+
+      } else {
+        // NEW JOURNAL
+        await dbJournals.addjournals(
+          dateStr,
+          timeStr,
+          totalDebit.toString(),
+          currencySelect,
+          rate.toString(),
+          description,
+        );
+        
+        final dbConn = await dbJournals.dbHelper.openDb();
+        final lastJ = await dbConn!.rawQuery("SELECT MAX(journal_id) as id FROM journals");
+        final newId = lastJ.first['id'].toString();
+
+        for (var row in stateManager.rows) {
+          await dbJournalDetails.addjournalDetails(
+            newId,
+            row.cells['id_account']!.value.toString(),
+            row.cells['acc_name']!.value.toString(),
+            row.cells['debit']!.value.toString(),
+            row.cells['credit']!.value.toString(),
+            row.cells['description']!.value.toString(),
+            row.cells['currncey']!.value.toString(),
+            row.cells['rate']!.value.toString(),
+            row.cells['total']!.value.toString(),
+          );
+        }
+      }
+    } catch (e) {
+      rethrow;
+    } finally {
+      saving = false;
+    }
   }
 
   InputDecoration inputDecorationNoIcon (String hintText) {

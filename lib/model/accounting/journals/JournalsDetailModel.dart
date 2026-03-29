@@ -49,18 +49,23 @@ class JournalsDetailModel {
     _acc_amount =obj["JD_acc_amount"];
   }
 
-  Map<String, dynamic> toMap() => {
-    "JD_id":_id ,
-    "JD_journal_id":_journal_id,
-    "JD_account_id":_account_id,
-    "JD_account_name":_account_name ,
-    "JD_debit":_debit,
-    "JD_currency":_currency,
-    "JD_credit": _credit ,
-    "JD_description":_description,
-    "JD_rate":_rate ,
-    "JD_acc_amount":_acc_amount,
-  };
+  Map<String, dynamic> toMap() {
+    final Map<String, dynamic> map = {
+      "JD_journal_id": _journal_id,
+      "JD_account_id": _account_id,
+      "JD_account_name": _account_name,
+      "JD_debit": _debit,
+      "JD_currency": _currency,
+      "JD_credit": _credit,
+      "JD_description": _description,
+      "JD_rate": _rate,
+      "JD_acc_amount": _acc_amount,
+    };
+    if (_id != 0) {
+      map["JD_id"] = _id;
+    }
+    return map;
+  }
 
   String get acc_amount => _acc_amount;
 

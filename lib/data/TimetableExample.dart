@@ -1114,153 +1114,156 @@ class _TimetableExampleState extends State<TimetableExample>
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
-          children: [
-            // Navigation Group
-            TextButton.icon(
-              onPressed: () => _navigate(-1),
-              icon: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
-              label: const Text('السابق',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              style: TextButton.styleFrom(
-                  foregroundColor: AppTheme.primaryColor,
-                  padding: const EdgeInsets.symmetric(horizontal: 8)),
-            ),
-            const SizedBox(width: 8),
-            _buildDateHeader(),
-            const SizedBox(width: 8),
-            TextButton.icon(
-              onPressed: () => _navigate(1),
-              icon: const Icon(Icons.arrow_back_ios_rounded, size: 14),
-              label: const Text('التالي',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              style: TextButton.styleFrom(
-                  foregroundColor: AppTheme.primaryColor,
-                  padding: const EdgeInsets.symmetric(horizontal: 8)),
-            ),
-            const VerticalDivider(width: 32, indent: 8, endIndent: 8),
-            // Actions Group
-            _buildActionButton(
-              icon: Icons.refresh_outlined,
-              color: Colors.blue,
-              onPressed: refreshList,
-              tooltip: 'تحديث',
-            ),
-            const SizedBox(width: 8),
-            _buildActionButton(
-              icon: Icons.today_rounded,
-              color: AppTheme.primaryColor,
-              onPressed: () {
-                _dateController.animateToToday(vsync: this);
-                _timeController.animateToShowFullDay(vsync: this);
-              },
-              tooltip: 'اذهب إلى تاريخ اليوم',
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              flex: 3,
-              child: DropdownSearch<String>.multiSelection(
-                popupProps: PopupPropsMultiSelection.menu(
-                  fit: FlexFit.loose,
-                  showSelectedItems: true,
-                  showSearchBox: true,
-                  searchFieldProps: TextFieldProps(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              // Navigation Group
+              TextButton.icon(
+                onPressed: () => _navigate(-1),
+                icon: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                label: const Text('السابق',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.primaryColor,
+                    padding: const EdgeInsets.symmetric(horizontal: 8)),
+              ),
+              const SizedBox(width: 8),
+              _buildDateHeader(),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: () => _navigate(1),
+                icon: const Icon(Icons.arrow_back_ios_rounded, size: 14),
+                label: const Text('التالي',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.primaryColor,
+                    padding: const EdgeInsets.symmetric(horizontal: 8)),
+              ),
+              const VerticalDivider(width: 32, indent: 8, endIndent: 8),
+              // Actions Group
+              _buildActionButton(
+                icon: Icons.refresh_outlined,
+                color: Colors.blue,
+                onPressed: refreshList,
+                tooltip: 'تحديث',
+              ),
+              const SizedBox(width: 8),
+              _buildActionButton(
+                icon: Icons.today_rounded,
+                color: AppTheme.primaryColor,
+                onPressed: () {
+                  _dateController.animateToToday(vsync: this);
+                  _timeController.animateToShowFullDay(vsync: this);
+                },
+                tooltip: 'اذهب إلى تاريخ اليوم',
+              ),
+              const SizedBox(width: 16),
+              SizedBox(
+                width: 250, // Fixed width for mobile/web consistency
+                child: DropdownSearch<String>.multiSelection(
+                  popupProps: PopupPropsMultiSelection.menu(
+                    fit: FlexFit.loose,
+                    showSelectedItems: true,
+                    showSearchBox: true,
+                    searchFieldProps: TextFieldProps(
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.search),
+                        hintText: "ابحث باسم المريض",
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                  items: (filter, loadProps) => listPersons,
+                  selectedItems: _selectedPatients,
+                  onChanged: (values) {
+                    setState(() {
+                      _selectedPatients = values;
+                    });
+                  },
+                  decoratorProps: DropDownDecoratorProps(
+                    baseStyle: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                      fontSize: 14,
+                    ),
                     decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.search),
-                      hintText: "ابحث باسم المريض",
+                      prefixIcon: const Icon(Icons.person,
+                          color: AppTheme.primaryColor, size: 20),
+                      labelText: "اختيار مرضى",
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                   ),
                 ),
-                items: (filter, loadProps) => listPersons,
-                selectedItems: _selectedPatients,
-                onChanged: (values) {
-                  setState(() {
-                    _selectedPatients = values;
-                  });
-                },
-                decoratorProps: DropDownDecoratorProps(
-                  baseStyle: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green,
-                    fontSize: 14,
-                  ),
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.person,
-                        color: AppTheme.primaryColor, size: 20),
-                    labelText: "اختيار مرضى",
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+              ),
+              const SizedBox(width: 8),
+              _buildActionButton(
+                icon: Icons.picture_as_pdf_rounded,
+                color: Colors.red,
+                onPressed: _exportPatientsReport,
+                tooltip: 'تصدير قائمة المختارات',
+              ),
+              const SizedBox(width: 8),
+              _buildActionButton(
+                icon: Icons.add_location_rounded,
+                color: Colors.purple,
+                onPressed: _addRoom,
+                tooltip: 'إضافة غرفة جديدة',
+              ),
+              const SizedBox(width: 8),
+              _buildActionButton(
+                icon: Icons.edit_location_rounded,
+                color: Colors.cyan,
+                onPressed: _editRoom,
+                tooltip: 'تعديل أسماء الغرف',
+              ),
+              const SizedBox(width: 8),
+              _buildActionButton(
+                icon: Icons.add_alarm_rounded,
+                color: Colors.orange,
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => DatingAddDialog(
+                      title: "إضافة موعد جديد ",
+                      positiveBtnText: "حفظ",
+                      negativeBtnText: "إلغاء الأمر",
                     ),
-                  ),
+                  ).then((_) => refreshList());
+                },
+                tooltip: 'اضافة مواعيد',
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: DropdownButton<PredefinedVisibleDateRange>(
+                  underline: const SizedBox(),
+                  onChanged: (visibleRange) =>
+                      _updateVisibleDateRange(visibleRange!),
+                  value: _visibleDateRange,
+                  items: [
+                    for (final visibleRange in PredefinedVisibleDateRange.values)
+                      DropdownMenuItem(
+                        value: visibleRange,
+                        child: Text(visibleRange.title,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 13)),
+                      ),
+                  ],
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            _buildActionButton(
-              icon: Icons.picture_as_pdf_rounded,
-              color: Colors.red,
-              onPressed: _exportPatientsReport,
-              tooltip: 'تصدير قائمة المختارات',
-            ),
-            const SizedBox(width: 8),
-            _buildActionButton(
-              icon: Icons.add_location_rounded,
-              color: Colors.purple,
-              onPressed: _addRoom,
-              tooltip: 'إضافة غرفة جديدة',
-            ),
-            const SizedBox(width: 8),
-            _buildActionButton(
-              icon: Icons.edit_location_rounded,
-              color: Colors.cyan,
-              onPressed: _editRoom,
-              tooltip: 'تعديل أسماء الغرف',
-            ),
-            const SizedBox(width: 8),
-            _buildActionButton(
-              icon: Icons.add_alarm_rounded,
-              color: Colors.orange,
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => DatingAddDialog(
-                    title: "إضافة موعد جديد ",
-                    positiveBtnText: "حفظ",
-                    negativeBtnText: "إلغاء الأمر",
-                  ),
-                ).then((_) => refreshList());
-              },
-              tooltip: 'اضافة مواعيد',
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: DropdownButton<PredefinedVisibleDateRange>(
-                underline: const SizedBox(),
-                onChanged: (visibleRange) =>
-                    _updateVisibleDateRange(visibleRange!),
-                value: _visibleDateRange,
-                items: [
-                  for (final visibleRange in PredefinedVisibleDateRange.values)
-                    DropdownMenuItem(
-                      value: visibleRange,
-                      child: Text(visibleRange.title,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 13)),
-                    ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

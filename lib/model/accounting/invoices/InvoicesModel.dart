@@ -1,5 +1,6 @@
 import 'package:timetable/timetable.dart';
 import 'package:flutter/material.dart';
+import 'package:hussam_clinc/model/accounting/invoices/InvoicesDetailModel.dart';
 
 class InvoicesModel {
   //TODO الإجمالي للفواتير
@@ -25,6 +26,8 @@ class InvoicesModel {
   String _jornal = 'شيكل'; // 'رقم القيد'
   String _discription = 'الوصف'; // 'رقم القيد'
   String _type = 'مبيعات'; // 'مبيعات_مشتريات'
+  
+  List<InvoicesDetailModel> details = [];
 
   InvoicesModel.name();
 
@@ -110,48 +113,53 @@ class InvoicesModel {
   }
 
   InvoicesModel.fromMap(Map<String, dynamic> obj) {
-    _id = obj["invoice_id"] as int;
-    _rate = obj["invoice_rate"]; // 'رقم الفاتورة حسب التصنيف'
-    _date = obj["invoice_date"]; // 'التاريخ'
-    _time = obj["invoice_time"]; // 'الوقت'
-    _account_no = obj["invoice_account_no"]; //'رقم الزبون'
-    _account_name = obj["invoice_account_name"]; //'اسم الزبون أو المورد'
-    _accountingTo_no = obj["invoice_accountingTo_no"]; //'رقم الزبون'
+    _id = (obj["invoice_id"] as int?) ?? 0;
+    _rate = obj["invoice_rate"]?.toString() ?? '1'; // 'رقم الفاتورة حسب التصنيف'
+    _date = obj["invoice_date"]?.toString() ?? ''; // 'التاريخ'
+    _time = obj["invoice_time"]?.toString() ?? ''; // 'الوقت'
+    _account_no = obj["invoice_account_no"]?.toString() ?? ''; //'رقم الزبون'
+    _account_name = obj["invoice_account_name"]?.toString() ?? ''; //'اسم الزبون أو المورد'
+    _accountingTo_no = obj["invoice_accountingTo_no"]?.toString() ?? ''; //'رقم الزبون'
     _accountingTo_name =
-        obj["invoice_accountingTo_name"]; //'اسم الزبون أو المورد'
-    _amount = obj["invoice_amount"]; //'قيمة الفاتورة'
-    _disscount = obj["invoice_disscount"]; //'قيمة الخصم'
-    _amount_all = obj["invoice_amount_all"]; //'قيمة الفاتورة الكلية'
-    _currency = obj["invoice_currency"]; // 'عملة الفاتورة'
-    _payment = obj["invoice_payment"]; // 'عملة الفاتورة'
-    _payment_currency = obj["invoice_payment_currency"]; //'عملة المدفوع'
-    _remaining = obj["invoice_remaining"]; // 'المدفوع'
-    _jornal = obj["invoice_jornal"]; // 'رقم القيد'
-    _discription = obj["invoice_discription"].toString(); // 'رقم القيد'
-    _type = obj["invoice_class"]; // 'مبيعات_مشتريات'
+        obj["invoice_accountingTo_name"]?.toString() ?? ''; //'اسم الزبون أو المورد'
+    _amount = obj["invoice_amount"]?.toString() ?? '0'; //'قيمة الفاتورة'
+    _disscount = obj["invoice_disscount"]?.toString() ?? '0'; //'قيمة الخصم'
+    _amount_all = obj["invoice_amount_all"]?.toString() ?? '0'; //'قيمة الفاتورة الكلية'
+    _currency = obj["invoice_currency"]?.toString() ?? ''; // 'عملة الفاتورة'
+    _payment = obj["invoice_payment"]?.toString() ?? '0'; // 'عملة الفاتورة'
+    _payment_currency = obj["invoice_payment_currency"]?.toString() ?? ''; //'عملة المدفوع'
+    _remaining = obj["invoice_remaining"]?.toString() ?? '0'; // 'المدفوع'
+    _jornal = obj["invoice_jornal"]?.toString() ?? ''; // 'رقم القيد'
+    _discription = obj["invoice_discription"]?.toString() ?? ''; // 'رقم القيد'
+    _type = obj["invoice_class"]?.toString() ?? ''; // 'مبيعات_مشتريات'
   }
 
-  Map<String, dynamic> toMap() => {
-        "invoice_id": _id,
-        "invoice_rate": _rate, // 'رقم الفاتورة حسب التصنيف'
-        "invoice_date": _date, // 'التاريخ'
-        "invoice_time": _time, // 'الوقت'
-        "invoice_account_no": _account_no, //'رقم الزبون'
-        "invoice_account_name": _account_name, //'اسم الزبون أو المورد'
-        "invoice_accountingTo_no": _accountingTo_no, //'رقم الزبون'
-        "invoice_accountingTo_name":
-            _accountingTo_name, //'اسم الزبون أو المورد'
-        "invoice_amount": _amount, //'قيمة الفاتورة'
-        "invoice_disscount": _disscount, //'قيمة الخصم'
-        "invoice_amount_all": _amount_all, //'قيمة الفاتورة الكلية'
-        "invoice_currency": _currency, // 'عملة الفاتورة'
-        "invoice_payment": _payment, // 'عملة الفاتورة'
-        "invoice_payment_currency": _payment_currency, //'عملة المدفوع'
-        "invoice_remaining": _remaining, // 'المدفوع'
-        "invoice_jornal": _jornal, // 'رقم القيد'
-        "invoice_discription": _discription, // 'رقم القيد'
-        "invoice_class": _type, // 'مبيعات_مشتريات'
-      };
+
+  Map<String, dynamic> toMap() {
+    final Map<String, dynamic> map = {
+      "invoice_rate": _rate,
+      "invoice_date": _date,
+      "invoice_time": _time,
+      "invoice_account_no": _account_no,
+      "invoice_account_name": _account_name,
+      "invoice_accountingTo_no": _accountingTo_no,
+      "invoice_accountingTo_name": _accountingTo_name,
+      "invoice_amount": _amount,
+      "invoice_disscount": _disscount,
+      "invoice_amount_all": _amount_all,
+      "invoice_currency": _currency,
+      "invoice_payment": _payment,
+      "invoice_payment_currency": _payment_currency,
+      "invoice_remaining": _remaining,
+      "invoice_jornal": _jornal,
+      "invoice_discription": _discription,
+      "invoice_class": _type,
+    };
+    if (_id != 0) {
+      map["invoice_id"] = _id;
+    }
+    return map;
+  }
 
   String get type => _type;
 

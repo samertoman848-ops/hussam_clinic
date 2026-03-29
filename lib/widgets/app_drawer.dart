@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:hussam_clinc/global_var/globals.dart';
 import 'package:hussam_clinc/main.dart';
-import 'package:hussam_clinc/pages/accounting/invoices/SalesInvoices.dart';
-import 'package:hussam_clinc/pages/accounting/invoices/SalesInvoicesOptions.dart';
-import 'package:hussam_clinc/pages/accounting/invoices/expenseInvoices.dart';
 import 'package:hussam_clinc/pages/accounting/invoices/expenseInvoicesReview.dart';
 import 'package:hussam_clinc/pages/accounting/invoices/saleInvoicesReview.dart';
+import 'package:hussam_clinc/pages/accounting/items/PageItems.dart';
+import 'package:hussam_clinc/pages/reports/PageItemReport.dart';
 import 'package:hussam_clinc/pages/accounting/journals/journalsReview.dart';
 import 'package:hussam_clinc/pages/accounting/vouchers/receiptVoucher.dart';
 import 'package:hussam_clinc/pages/accounting/vouchers/receiptVouchersReview.dart';
@@ -15,11 +14,18 @@ import 'package:hussam_clinc/pages/settings/DbSettingsPage.dart';
 import 'package:hussam_clinc/theme/app_theme.dart';
 import 'package:hussam_clinc/widgets/animated_card.dart';
 import 'package:hussam_clinc/widgets/page_transition.dart';
+import 'package:hussam_clinc/widgets/ClinicSwitcher.dart';
 import 'package:hussam_clinc/services/firebase_sync_service.dart';
 import 'package:flutter/foundation.dart';
+import 'package:hussam_clinc/services/AuthService.dart';
+import 'package:hussam_clinc/services/ClinicService.dart';
+import 'package:hussam_clinc/model/UserModel.dart';
+import 'package:hussam_clinc/pages/auth/user_management_page.dart';
+import 'package:hussam_clinc/pages/auth/login_page.dart';
 
 class AppDrawer extends StatelessWidget {
-  const AppDrawer({super.key});
+  final VoidCallback? onClinicChanged;
+  const AppDrawer({super.key, this.onClinicChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -31,66 +37,65 @@ class AppDrawer extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 10),
               children: [
-                AnimatedCard(
-                  delay: const Duration(milliseconds: 100),
-                  child: _buildMenuItem(
-                    context,
-                    title: 'المرضى',
-                    iconPath: "assets/icon/patients.png",
-                    onTap: () {
-                      Navigator.of(context).push(
-                          PageTransition(child: PageCostumers(allPatient)));
-                    },
-                  ),
-                ),
-                AnimatedCard(
-                  delay: const Duration(milliseconds: 200),
-                  child: _buildMenuItem(
-                    context,
-                    title: 'الموظفين',
-                    iconPath: "assets/icon/doctor.png",
-                    onTap: () async {
-                      await AllEmplyess();
-                      if (context.mounted) {
+                if (AuthService().currentUser?.hasPermission('patients') ??
+                    true)
+                  AnimatedCard(
+                    delay: const Duration(milliseconds: 100),
+                    child: _buildMenuItem(
+                      context,
+                      title: 'المرضى',
+                      iconPath: "assets/icon/patients.png",
+                      onTap: () {
                         Navigator.of(context).push(
-                            PageTransition(child: PageEmployees(allEmployees)));
-                      }
-                    },
+                            PageTransition(child: PageCostumers(allPatient)));
+                      },
+                    ),
                   ),
-                ),
-                AnimatedCard(
-                  delay: const Duration(milliseconds: 300),
-                  child: _buildMenuItem(
-                    context,
-                    title: 'الموردين',
-                    iconPath: "assets/icon/supliers.png",
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text('قريباً: صفحة الموردين'),
-                          backgroundColor: AppTheme.secondaryColor,
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10)),
-                        ),
-                      );
-                    },
+                if (AuthService().currentUser?.hasPermission('employees') ??
+                    true)
+                  AnimatedCard(
+                    delay: const Duration(milliseconds: 200),
+                    child: _buildMenuItem(
+                      context,
+                      title: 'الموظفين',
+                      iconPath: "assets/icon/doctor.png",
+                      onTap: () async {
+                        await AllEmplyess();
+                        if (context.mounted) {
+                          Navigator.of(context).push(PageTransition(
+                              child: PageEmployees(allEmployees)));
+                        }
+                      },
+                    ),
                   ),
-                ),
-                AnimatedCard(
-                  delay: const Duration(milliseconds: 400),
-                  child: _buildMenuItem(
-                    context,
-                    title: 'الإعدادات',
-                    icon: Icons.settings,
-                    onTap: () {
-                      Navigator.of(context)
-                          .push(PageTransition(child: const DbSettingsPage()));
-                    },
+                if (AuthService().isAdmin)
+                  AnimatedCard(
+                    delay: const Duration(milliseconds: 300),
+                    child: _buildMenuItem(
+                      context,
+                      title: 'إدارة المستخدمين',
+                      icon: Icons.manage_accounts_rounded,
+                      onTap: () {
+                        Navigator.of(context).push(
+                            PageTransition(child: const UserManagementPage()));
+                      },
+                    ),
                   ),
-                ),
-                if (!kIsWeb)
+                if (AuthService().currentUser?.hasPermission('settings') ??
+                    true)
+                  AnimatedCard(
+                    delay: const Duration(milliseconds: 400),
+                    child: _buildMenuItem(
+                      context,
+                      title: 'الإعدادات',
+                      icon: Icons.settings,
+                      onTap: () {
+                        Navigator.of(context).push(
+                            PageTransition(child: const DbSettingsPage()));
+                      },
+                    ),
+                  ),
+                if (!kIsWeb && AuthService().isAdmin)
                   AnimatedCard(
                     delay: const Duration(milliseconds: 450),
                     child: _buildMenuItem(
@@ -106,7 +111,8 @@ class AppDrawer extends StatelessWidget {
                                 'هل تريد رفع جميع البيانات المحلية إلى السحابة؟ قد يستغرق هذا بعض الوقت.'),
                             actions: [
                               TextButton(
-                                  onPressed: () => Navigator.pop(context, false),
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
                                   child: const Text('إلغاء')),
                               ElevatedButton(
                                   onPressed: () => Navigator.pop(context, true),
@@ -118,7 +124,8 @@ class AppDrawer extends StatelessWidget {
                         if (confirm == true) {
                           final messenger = ScaffoldMessenger.of(context);
                           messenger.showSnackBar(
-                            const SnackBar(content: Text('بدأ رفع البيانات...')),
+                            const SnackBar(
+                                content: Text('بدأ رفع البيانات...')),
                           );
                           try {
                             await FirebaseSyncService.instance
@@ -136,144 +143,159 @@ class AppDrawer extends StatelessWidget {
                       },
                     ),
                   ),
-                const Divider(indent: 20, endIndent: 20),
-                AnimatedCard(
-                  delay: const Duration(milliseconds: 500),
-                  child: _buildExpansionTile(
-                    context,
-                    title: "المالية",
-                    iconPath: "assets/accounting/accounting.png",
-                    children: [
-                      _buildSubExpansionTile(
-                        context,
-                        title: "الفواتير",
-                        iconPath: "assets/accounting/invoices.png",
-                        children: [
-                          _buildSubMenuItem(
-                            context,
-                            title: 'فاتورة المبيعات',
-                            iconPath: "assets/accounting/expense_invoice.png",
-                            onTap: () {
-                              Navigator.of(context).push(PageTransition(
-                                  child: const SalesInvoicesOptions()));
-                            },
-                          ),
-                          _buildSubMenuItem(
-                            context,
-                            title: ' مراجعة فواتير المبيعات',
-                            iconPath:
-                                "assets/accounting/expense_invoice_reviwe.png",
-                            onTap: () async {
-                              AllInvioces();
-                              await Future.delayed(
-                                  const Duration(milliseconds: 500));
-                              Navigator.of(context).push(PageTransition(
-                                  child: const SaleInvoicesReview()));
-                            },
-                          ),
-                          _buildSubMenuItem(
-                            context,
-                            title: 'فاتورة مشتريات',
-                            iconPath: "assets/accounting/sales_invoice.png",
-                            onTap: () async {
-                              AllEmplyess();
-                              VMGlobal.MaxNoS();
-                              await Future.delayed(
-                                  const Duration(milliseconds: 500));
-                              Navigator.of(context).push(PageTransition(
-                                  child: const ExpenseInvoices()));
-                            },
-                          ),
-                          _buildSubMenuItem(
-                            context,
-                            title: ' مراجعة فواتير المشتريات',
-                            iconPath:
-                                "assets/accounting/sales_invoice_reviwe.png",
-                            onTap: () async {
-                              ExpenseInvioces();
-                              await Future.delayed(
-                                  const Duration(milliseconds: 500));
-                              Navigator.of(context).push(PageTransition(
-                                  child: const ExpenseInvoicesReview()));
-                            },
-                          ),
-                        ],
-                      ),
-                      _buildSubExpansionTile(
-                        context,
-                        title: "الإيصال",
-                        iconPath: "assets/accounting/vouchers.png",
-                        children: [
-                          _buildSubMenuItem(
-                            context,
-                            title: 'إيصال قبض',
-                            iconPath: "assets/accounting/reciept_voucher.png",
-                            onTap: () async {
-                              Navigator.of(context).push(PageTransition(
-                                  child:
-                                      const ReceiptVoucherPage(type: 'قبض')));
-                            },
-                          ),
-                          _buildSubMenuItem(
-                            context,
-                            title: ' مراجعة إيصال القبض ',
-                            iconPath:
-                                "assets/accounting/reciept_voucher_reviwe.png",
-                            onTap: () async {
-                              Navigator.of(context).push(PageTransition(
-                                  child: const ReceiptVouchersReview(
-                                      type: 'قبض')));
-                            },
-                          ),
-                          _buildSubMenuItem(
-                            context,
-                            title: 'إيصال صرف',
-                            iconPath: "assets/accounting/payment_voucher.png",
-                            onTap: () async {
-                              Navigator.of(context).push(PageTransition(
-                                  child:
-                                      const ReceiptVoucherPage(type: 'صرف')));
-                            },
-                          ),
-                          _buildSubMenuItem(
-                            context,
-                            title: ' مراجعة إيصال الصرف ',
-                            iconPath:
-                                "assets/accounting/payment_voucher_reviwe.png",
-                            onTap: () async {
-                              Navigator.of(context).push(PageTransition(
-                                  child: const ReceiptVouchersReview(
-                                      type: 'صرف')));
-                            },
-                          ),
-                        ],
-                      ),
-                      _buildSubMenuItem(
-                        context,
-                        title: 'القيود',
-                        iconPath: "assets/accounting/journal.png",
-                        onTap: () async {
-                          Journals();
-                          await Future.delayed(
-                              const Duration(milliseconds: 500));
-                          Navigator.of(context).push(
-                              PageTransition(child: const JournalsReview()));
-                        },
-                      ),
-                      _buildSubMenuItem(
-                        context,
-                        title: 'حركة الحساب',
-                        iconPath: "assets/accounting/calculation.png",
-                        onTap: () {},
-                      ),
-                      _buildSubMenuItem(
-                        context,
-                        title: ' شجرة الحسابات',
-                        iconPath: "assets/accounting/tree.png",
-                        onTap: () {},
-                      ),
-                    ],
+                // تبديل العيادات (إذا كانت هناك أكثر من عيادة واحدة)
+                if (ClinicService().hasMultipleClinics)
+                  AnimatedCard(
+                    delay: const Duration(milliseconds: 350),
+                    child: _buildMenuItem(
+                      context,
+                      title: 'تبديل العيادة',
+                      icon: Icons.business,
+                      onTap: () {
+                        _showClinicSwitchDialog(context);
+                      },
+                    ),
                   ),
+                const Divider(indent: 20, endIndent: 20),
+                if (AuthService().currentUser?.hasPermission('accounting') ??
+                    true)
+                  AnimatedCard(
+                    delay: const Duration(milliseconds: 500),
+                    child: _buildExpansionTile(
+                      context,
+                      title: "المالية",
+                      iconPath: "assets/accounting/accounting.png",
+                      children: [
+                        _buildSubMenuItem(
+                          context,
+                          title: 'الأصناف',
+                          iconPath:
+                              "assets/accounting/accounting.png", // Reusing icon for simplicity
+                          onTap: () async {
+                            Navigator.of(context)
+                                .push(PageTransition(child: const PageItems()));
+                          },
+                        ),
+                        _buildSubMenuItem(
+                          context,
+                          title: 'تقرير المخازن',
+                          iconPath:
+                              "assets/accounting/accounting.png", // Reusing icon
+                          onTap: () async {
+                            Navigator.of(context).push(
+                                PageTransition(child: const PageItemReport()));
+                          },
+                        ),
+                        _buildSubExpansionTile(
+                          context,
+                          title: "الفواتير",
+                          iconPath: "assets/accounting/invoices.png",
+                          children: [
+                            _buildSubMenuItem(
+                              context,
+                              title: 'فاتورة المبيعات',
+                              iconPath: "assets/accounting/expense_invoice.png",
+                              onTap: () async {
+                                AllInvioces();
+                                await Future.delayed(
+                                    const Duration(milliseconds: 500));
+                                Navigator.of(context).push(PageTransition(
+                                    child: const SaleInvoicesReview()));
+                              },
+                            ),
+                            _buildSubMenuItem(
+                              context,
+                              title: 'فاتورة مشتريات',
+                              iconPath: "assets/accounting/sales_invoice.png",
+                              onTap: () async {
+                                ExpenseInvioces();
+                                await Future.delayed(
+                                    const Duration(milliseconds: 500));
+                                Navigator.of(context).push(PageTransition(
+                                    child: const ExpenseInvoicesReview()));
+                              },
+                            ),
+                          ],
+                        ),
+                        _buildSubExpansionTile(
+                          context,
+                          title: "الإيصال",
+                          iconPath: "assets/accounting/vouchers.png",
+                          children: [
+                            _buildSubMenuItem(
+                              context,
+                              title: 'إيصال قبض',
+                              iconPath: "assets/accounting/reciept_voucher.png",
+                              onTap: () async {
+                                Navigator.of(context).push(PageTransition(
+                                    child:
+                                        const ReceiptVoucherPage(type: 'قبض')));
+                              },
+                            ),
+                            _buildSubMenuItem(
+                              context,
+                              title: ' مراجعة إيصال القبض ',
+                              iconPath:
+                                  "assets/accounting/reciept_voucher_reviwe.png",
+                              onTap: () async {
+                                Navigator.of(context).push(PageTransition(
+                                    child: const ReceiptVouchersReview(
+                                        type: 'قبض')));
+                              },
+                            ),
+                            _buildSubMenuItem(
+                              context,
+                              title: 'إيصال صرف',
+                              iconPath: "assets/accounting/payment_voucher.png",
+                              onTap: () async {
+                                Navigator.of(context).push(PageTransition(
+                                    child:
+                                        const ReceiptVoucherPage(type: 'صرف')));
+                              },
+                            ),
+                            _buildSubMenuItem(
+                              context,
+                              title: ' مراجعة إيصال الصرف ',
+                              iconPath:
+                                  "assets/accounting/payment_voucher_reviwe.png",
+                              onTap: () async {
+                                Navigator.of(context).push(PageTransition(
+                                    child: const ReceiptVouchersReview(
+                                        type: 'صرف')));
+                              },
+                            ),
+                          ],
+                        ),
+                        if (AuthService()
+                                .currentUser
+                                ?.hasPermission('reports') ??
+                            true)
+                          _buildSubMenuItem(
+                            context,
+                            title: 'القيود',
+                            iconPath: "assets/accounting/journal.png",
+                            onTap: () async {
+                              Journals();
+                              await Future.delayed(
+                                  const Duration(milliseconds: 500));
+                              Navigator.of(context).push(PageTransition(
+                                  child: const JournalsReview()));
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                _buildMenuItem(
+                  context,
+                  title: 'تسجيل الخروج',
+                  icon: Icons.logout_rounded,
+                  onTap: () {
+                    AuthService().logout();
+                    Navigator.of(context).pushAndRemoveUntil(
+                      PageTransition(child: const LoginPage()),
+                      (route) => false,
+                    );
+                  },
                 ),
               ],
             ),
@@ -284,6 +306,7 @@ class AppDrawer extends StatelessWidget {
   }
 
   Widget _buildHeader(BuildContext context) {
+    UserModel? user = AuthService().currentUser;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.only(top: 50, bottom: 20),
@@ -308,14 +331,22 @@ class AppDrawer extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 15),
-          const Text(
-            'عيادة حسام',
-            style: TextStyle(
+          Text(
+            user?.username ?? 'عيادة حسام',
+            style: const TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.bold,
               color: Colors.white,
             ),
           ),
+          if (user != null)
+            Text(
+              user.role == 'admin' ? 'مدير النظام' : 'مستخدم',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.white.withOpacity(0.8),
+              ),
+            ),
         ],
       ),
     );
@@ -388,6 +419,37 @@ class AppDrawer extends StatelessWidget {
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
         shape: const Border(),
         children: children,
+      ),
+    );
+  }
+
+  /// عرض حوار تبديل العيادات
+  void _showClinicSwitchDialog(BuildContext context) {
+    final clinicService = ClinicService();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'تبديل العيادة',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: SingleChildScrollView(
+          child: ClinicSwitcher(
+            showAsIcon: false,
+            onClinicChanged: () {
+              Navigator.pop(context);
+              onClinicChanged?.call();
+            },
+          ),
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إغلاق'),
+          ),
+        ],
       ),
     );
   }

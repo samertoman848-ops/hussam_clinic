@@ -1,4 +1,1729 @@
-﻿import 'dart:io';import 'package:flutter/foundation.dart';import 'package:flutter/material.dart';import 'package:flutter/services.dart';import 'package:hussam_clinc/theme/app_theme.dart' show AppTheme;import 'package:hussam_clinc/db/patients/dbpatienthealthdoctor.dart';import 'package:hussam_clinc/db/patients/dbpicture.dart';import 'package:hussam_clinc/model/patients/PatientHealthDoctorModel.dart';import 'package:intl/intl.dart' as tt;import 'package:photo_view/photo_view.dart';import 'package:photo_view/photo_view_gallery.dart';import '../../db/dbemployee.dart';import '../../db/patients/dbpatient.dart';import '../../db/patients/dbpatienthealth.dart';import 'package:hussam_clinc/db/dbdate.dart';import '../../db/patients/dbtreatmentplans.dart';import '../../db/patients/dbinvoices.dart';import '../../global_var/globals.dart';import 'package:hussam_clinc/db/dbrooms.dart';import '../../model/RoomModel.dart';import '../../main.dart';import 'package:galleryimage/galleryimage.dart';import 'package:image_picker/image_picker.dart';import 'package:permission_handler/permission_handler.dart';import '../../model/patients/PatientModel.dart';import '../../model/patients/TreatmentPlanModel.dart';import '../../model/patients/InvoiceModel.dart';import '../../widgets/dental_chart.dart';import '../accounting/invoices/SalesInvoices.dart';import '../../View_model/ViewModelSalesInvoices.dart';import '../../model/accounting/journals/IndexModel.dart';import '../../model/accounting/AccoutingTreeModel.dart';import 'package:pluto_grid/pluto_grid.dart';class PageEditCostumers extends StatefulWidget {  final PatientModel Patients;  const PageEditCostumers(this.Patients, {super.key});  @override  State<PageEditCostumers> createState() => _PageEditCostumersState();}DateTime projectStartDate = DateTime.now();class _PageEditCostumersState extends State<PageEditCostumers> {  List<PatienHealthtDoctorModel> allPHD = [];  List<bool> PHD_edit = [];  List<String> imageUrls = [];  int paint_id = 1;  var _patient_name, _patient_mobile, _patient_fileNo;  var _patient_mobile2;  var _patient_resone;  var _patient_worries = "نعم";  var _patient_place, _patient_sex = 'ذكر';  String _patient_birthDate =      '${projectStartDate.day}/${projectStartDate.month}/${projectStartDate.year}';  var _patient_status = 'أعزب';  GlobalKey<FormState> formstate = GlobalKey<FormState>();  GlobalKey<FormState> formstate2 = GlobalKey<FormState>();  GlobalKey<FormState> formstate3 = GlobalKey<FormState>();  late List<GlobalObjectKey<FormState>> formstateList = List.generate(      0, (int index) => GlobalObjectKey<FormState>(index),      growable: true);  final List<GlobalObjectKey<FormState>> formstateList2 = List.generate(      5, (int index) => GlobalObjectKey<FormState>(index),      growable: true);  var costumer_sex_items = [    "ذكر",    "أنثى",  ];  var costumer_status_items = [    "متزوج",    "أعزب",    "أرمل",  ];  var costumer_worries_items = [    "نعم",    "لا",    "نوعا ما",  ];  var _patient_health;  var _patient_sensitive = false, _patient_sensitive_Ex = "";  var _patient_surgical = false, _patient_surgical_Ex = "";  var _patient_haemophilia = false, _patient_haemophilia_Ex = "";  var _patient_drugs = false, _patient_drugs_Ex = "";  var _patient_oralDiseases, _patient_smoking = false;  var _patient_pregnant = false, _patient_pregnant_Ex = "";  var _patient_lactating = false, _patient_lactating_Ex = "";  var _patient_contraception = false, _patient_contraception_Ex = "";  List<String> listDoctors = [];  final String _PHD_DoctorList = '';  String _currentTreatmentPlan = "";  // Treatment Plans Variables  List<TreatmentPlanModel> treatmentPlans = [];  DbTreatmentPlans dbTreatmentPlans = DbTreatmentPlans();  DbInvoices dbInvoices = DbInvoices();  String selectedDoctorForPlan = "حسام العايدي";  // Invoice Variables  int? lastInsertedTreatmentPlanId;  List<String> paymentMethods = ['نقدي', 'بطاقة ائتمان', 'شيك', 'تحويل بنكي'];  void _rebuildUnifiedPlan() {    Map<String, Map<String, dynamic>> unified = {};    // Sort to process oldest first (newer records will update/overwrite status)    List<PatienHealthtDoctorModel> sortedPHD = List.from(allPHD);    try {      sortedPHD.sort((a, b) => tt.DateFormat("dd/MM/yyyy")          .parse(a.date)          .compareTo(tt.DateFormat("dd/MM/yyyy").parse(b.date)));    } catch (e) {      debugPrint("Sort error in unified plan: $e");    }    for (var record in sortedPHD) {      // 1. Process Plan Strings [الخطة العلاجية: ...]      if (record.treatment.contains("[الخطة العلاجية:")) {        RegExp planExp = RegExp(r'\[الخطة العلاجية: (.*?)\]');        var match = planExp.firstMatch(record.treatment);        if (match != null) {          String content = match.group(1) ?? "";          List<String> parts = content.split(RegExp(r'[،,] '));          for (var part in parts) {            List<String> sub = part.split('|');            if (sub.length >= 2) {              String tooth = sub[0].trim();              String proc = sub[1].trim();              bool completed = sub.length >= 3                  ? sub[2].trim().toLowerCase() == 'true'                  : false;              String doc = sub.length >= 4 ? sub[3].trim() : record.doctorName;              unified["$tooth|$proc"] = {                'tooth': tooth,                'proc': proc,                'completed': completed,                'doctor': doc              };            }          }        }      }      // 2. Extract from plain visit text "سن X: Y"      // This ensures items added in "Treatment Details" show up in the "Treatment Plan" chart      RegExp visitExp = RegExp(r'سن (\d+):\s*(.*?)(?=\n|$)');      var matches = visitExp.allMatches(record.treatment);      for (var m in matches) {        String tooth = m.group(1)!;        String proc = m.group(2)!.trim();        // If it was in a plain visit record, we consider it completed        unified["$tooth|$proc"] = {          'tooth': tooth,          'proc': proc,          'completed': true,          'doctor': record.doctorName        };      }    }    // 3. Process from Database Treatment Plans (New Table)    // This ensures items saved via "Save Chart to List" are reflected back in the chart    for (var plan in treatmentPlans) {      String key = "${plan.toothNumber}|${plan.treatmentName}";      unified[key] = {        'tooth': plan.toothNumber,        'proc': plan.treatmentName,        'completed': plan.isCompleted,        'doctor': plan.doctorName      };    }    List<String> parts = [];    for (var item in unified.values) {      parts.add(          "${item['tooth']}|${item['proc']}|${item['completed']}|${item['doctor']}");    }    if (parts.isNotEmpty) {      setState(() {        _currentTreatmentPlan = "[الخطة العلاجية: ${parts.join(', ')}]";      });    }  }  Map<String, List<String>> getGroupedPlannedTreatments() {    Map<String, List<String>> grouped = {};    if (_currentTreatmentPlan.isEmpty) return grouped;    try {      RegExp planExp = RegExp(r'\[الخطة العلاجية: (.*?)\]');      var match = planExp.firstMatch(_currentTreatmentPlan);      if (match != null) {        String content = match.group(1) ?? "";        List<String> parts =            content.contains('، ') ? content.split('، ') : content.split(', ');        for (var part in parts) {          if (part.contains('|')) {            List<String> sub = part.split('|');            if (sub.length >= 2) {              String tooth = sub[0].trim();              String proc = sub[1].trim();              if (proc.isNotEmpty) {                if (!grouped.containsKey(proc)) {                  grouped[proc] = [];                }                if (!grouped[proc]!.contains(tooth)) {                  grouped[proc]!.add(tooth);                }              }            }          }        }      }    } catch (e) {      debugPrint("Error parsing planned treatments: $e");    }    return grouped;  }  /// استخراج جميع عناصر (tooth:treatment) من الرسومات  List<String> _getChartItems() {    List<String> items = [];    if (_currentTreatmentPlan.isEmpty) return items;    try {      RegExp planExp = RegExp(r'\[الخطة العلاجية: (.*?)\]');      var match = planExp.firstMatch(_currentTreatmentPlan);      if (match != null) {        String content = match.group(1) ?? "";        List<String> parts =            content.contains('، ') ? content.split('، ') : content.split(', ');        for (var part in parts) {          if (part.contains('|')) {            List<String> sub = part.split('|');            if (sub.length >= 2) {              String tooth = sub[0].trim();              String treatment = sub[1].trim();              if (tooth.isNotEmpty && treatment.isNotEmpty) {                items.add('$tooth:$treatment');              }            }          }        }      }    } catch (e) {      debugPrint("Error extracting chart items: $e");    }    return items;  }  final List<String> commonTreatments = [    "فحص دوري (Checkup)",    "تشخيص شامل (Diagnosis)",    "تنظيف أسنان (Scaling)",    "تلميع أسنان (Polishing)",    "حشوة كمبوزيت (Composite Filling)",    "حشوة أملغم (Amalgam Filling)",    "حشوة مؤقتة (Temporary Filling)",    "علاج عصب - جلسة واحدة (Root Canal - Single)",    "علاج عصب - جلسات متعددة (Root Canal - Multi)",    "إعادة علاج عصب (Re-Root Canal)",    "خلع بسيط (Simple Extraction)",    "خلع جراحي (Surgical Extraction)",    "خلع ضرس العقل (Wisdom Tooth Extraction)",    "قص اللثة (Gingivectomy)",    "تلبيسة زيركون (Zirconia Crown)",    "تلبيسة بورسلين (Porcelain Crown)",    "جسر أسنان (Dental Bridge)",    "فينيير (Veneers)",    "زراعة سن (Dental Implant)",    "تطعيم عظمي (Bone Graft)",    "تبييض أسنان (Teeth Whitening)",    "واقي ليلي (Night Guard)",    "تقويم أسنان (Orthodontics)",    "حافظ مسافة (Space Maintainer)",    "صورة أشعة صغيرة (Periapical X-Ray)",    "صورة بانوراما (Panorama X-Ray)",    "طقم أسنان كامل (Full Denture)",    "طقم أسنان جزئي (Partial Denture)",  ];  List<Tab> get myTabs => const <Tab>[        Tab(text: 'معلومات عامة'),        Tab(text: 'معلومات صحية'),        Tab(text: 'الخطة العلاجية'),        Tab(text: 'تفاصيل العلاج'),        Tab(text: 'صور الأسنان'),      ];  bool editCheck = true;  bool editCheckhealth = false;  bool editCheckHealthDoctor = false;  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();  var numberFormat = tt.NumberFormat("00000", "en_US");  final ImagePicker picker = ImagePicker();  XFile? imageFile;  ButtonStyle FirstClick = ButtonStyle(    backgroundColor: WidgetStateProperty.all<Color>(Colors.white),    textStyle: WidgetStateProperty.all(      const TextStyle(fontSize: 25, fontWeight: FontWeight.bold),    ),    fixedSize: WidgetStateProperty.all(const Size(280, 50)),    side: WidgetStateProperty.all(      const BorderSide(        color: Colors.deepPurple,        width: 2,      ),    ),    shape: WidgetStateProperty.all(      RoundedRectangleBorder(        borderRadius: BorderRadius.circular(10),      ),    ),    alignment: Alignment.center,  );  ButtonStyle SecondClick = ButtonStyle(    backgroundColor: WidgetStateProperty.all<Color>(Colors.white12),    textStyle: WidgetStateProperty.all(      const TextStyle(          fontSize: 25, fontWeight: FontWeight.bold, color: Colors.white),    ),    fixedSize: WidgetStateProperty.all(const Size(280, 50)),    side: WidgetStateProperty.all(      const BorderSide(        color: Colors.blueGrey,        width: 2,      ),    ),    shape: WidgetStateProperty.all(      RoundedRectangleBorder(        borderRadius: BorderRadius.circular(10),      ),    ),    alignment: Alignment.center,  );  Future<void> editCostumers(context) async {    var formdata = formstate.currentState;    if (formdata!.validate()) {      formdata.save();      if (editCheck == true) {        // Perform the update immediately instead of waiting for a SnackBar action        DbPatient dbPatient = DbPatient();        await dbPatient.updateFileNoPatient(            _patient_name,            _patient_mobile,            _patient_mobile2,            _patient_sex,            _patient_status,            _patient_birthDate,            _patient_fileNo,            _patient_place,            _patient_resone,            _patient_worries);        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(          content: Text(            'تم تعديل بيانات المريض بنجاح',            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),          ),          duration: Duration(seconds: 3),        ));        editCheck = false;        AllPatientList();      }    }  }  Future<void> editeCostumerhealth(context) async {    var formdata = formstate2.currentState;    if (formdata!.validate()) {      formdata.save();      for (int i = 0; i < allPatient.length; i++) {        var paint = allPatient[i];        if (int.parse(paint.fileNo) == int.parse(_patient_fileNo)) {          editCheck = false;          paint_id = paint.id;          i = allPatient.length - 1;        }      }      if (editCheckhealth == false) {        DbPatientHealth dbPatientHealth = DbPatientHealth();        dbPatientHealth.addPatientHealth(            paint_id.toString(),            _patient_health,            _patient_sensitive.toString(),            _patient_sensitive_Ex,            _patient_surgical.toString(),            _patient_surgical_Ex,            _patient_haemophilia.toString(),            _patient_haemophilia_Ex,            _patient_drugs.toString(),            _patient_drugs_Ex,            _patient_oralDiseases,            _patient_smoking.toString(),            _patient_pregnant.toString(),            _patient_pregnant_Ex,            _patient_lactating.toString(),            _patient_lactating_Ex,            _patient_contraception.toString(),            _patient_contraception_Ex);        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(          content: Text(            ' تم إضافة  البيانات الصحية للمريض بنجاح ',            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),          ),          duration: Duration(seconds: 4),        ));        editCheckhealth = true;        AllPatientList();      } else {        ScaffoldMessenger.of(context).showSnackBar(SnackBar(          action: SnackBarAction(            textColor: Colors.white,            backgroundColor: Colors.pinkAccent,            label: 'تعديل الملف ',            onPressed: () {              DbPatientHealth dbPatientHealth = DbPatientHealth();              dbPatientHealth.addPatientHealth(                  paint_id.toString(),                  _patient_health,                  _patient_sensitive.toString(),                  _patient_sensitive_Ex,                  _patient_surgical.toString(),                  _patient_surgical_Ex,                  _patient_haemophilia.toString(),                  _patient_haemophilia_Ex,                  _patient_drugs.toString(),                  _patient_drugs_Ex,                  _patient_oralDiseases,                  _patient_smoking.toString(),                  _patient_pregnant.toString(),                  _patient_pregnant_Ex,                  _patient_lactating.toString(),                  _patient_lactating_Ex,                  _patient_contraception.toString(),                  _patient_contraception_Ex);              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(                content: Text(                  ' تم تعديل بيانات المريض بنجاح ',                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),                ),                duration: Duration(seconds: 4),              ));              AllPatientList();            },          ),          content: const Column(            children: [              Text(                'لم يتم إضافة البيانات لأن البيانات مكررة يرجى مراجعة البيانات ',                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),              ),            ],          ),          duration: const Duration(seconds: 5),        ));      }      AllPatientList();    }  }  @override  void initState() {    // TODO: implement initState    super.initState();    setState(() {      selecedDoctorList();      intValues();    });  }  void intValues() {    setState(() {      DbPatientHealth dbPatientHealth = DbPatientHealth();      dbPatientHealth.allPHs().then((HPS) {        for (var HP in HPS) {          if (HP.patientId == widget.Patients.id.toString()) {            setState(() {              _patient_health = HP.health;              _patient_sensitive = bool.parse(HP.sensitive.toLowerCase());              _patient_sensitive_Ex = HP.sensitive_Ex;              _patient_surgical = bool.parse(HP.surgical.toLowerCase());              _patient_surgical_Ex = HP.surgical_Ex;              _patient_haemophilia = bool.parse(HP.haemophilia.toLowerCase());              _patient_haemophilia_Ex = HP.haemophilia_Ex;              _patient_drugs = bool.parse(HP.drugs.toLowerCase());              _patient_drugs_Ex = HP.drugs_Ex;              _patient_oralDiseases = HP.oralDiseases;              _patient_smoking = bool.parse(HP.smoking.toLowerCase());              _patient_pregnant = bool.parse(HP.pregnant.toLowerCase());              _patient_pregnant_Ex = HP.pregnant_Ex;              _patient_lactating = bool.parse(HP.lactating.toLowerCase());              _patient_lactating_Ex = HP.lactating_Ex;              _patient_contraception =                  bool.parse(HP.contraception.toLowerCase());              _patient_contraception_Ex = HP.contraception_Ex;            });          }        }      });    });    DbPatientHealthDoctor dbPatientHealthDoctor = DbPatientHealthDoctor();    setState(() {      dbPatientHealthDoctor.searchByPatientId(widget.Patients.id).then((value) {        setState(() {          allPHD = value;          PHD_edit = List.generate(allPHD.length, (index) => false);          formstateList = List.generate(              allPHD.length, (int index) => GlobalObjectKey<FormState>(index),              growable: true);        });        // Load latest dental chart plan if it exists        for (var record in value) {          if (record.treatment.contains("[الخطة العلاجية:")) {            setState(() {              _currentTreatmentPlan = record.treatment;            });            break;          }        }      });      paint_id = widget.Patients.id;      _patient_name = widget.Patients.name.toString();      _patient_mobile = widget.Patients.mobile.toString();      _patient_mobile2 = (widget.Patients as dynamic).mobile2?.toString() ?? '';      _patient_fileNo = widget.Patients.fileNo.toString();      _patient_resone = widget.Patients.resone.toString();      _patient_worries = "لا";      _patient_place = widget.Patients.address.toString();      _patient_sex = widget.Patients.sex.toString() == 'M' ||              widget.Patients.sex.toString() == ''          ? 'ذكر'          : widget.Patients.sex.toString();      //(widget.Patients.birthDay.isEmpty || widget.Patients.birthDay=='')?print('widget.Patients.birthDay'):print('rrrrrrrrrrrrrrffffffrr===${widget.Patients.birthDay}   ');      projectStartDate = (widget.Patients.birthDay.isEmpty ||              widget.Patients.birthDay == 'null')          ? projectStartDate          : tt.DateFormat("dd/MM/yyyy").parse(widget.Patients.birthDay);      _patient_birthDate = widget.Patients.birthDay.toString() == ''          ? '${projectStartDate.day}/${projectStartDate.month}/${projectStartDate.year}'          : widget.Patients.birthDay.toString();      _patient_status = 'أعزب';      /// find Max No of Picture      DbPicture dbPicture = DbPicture();      dbPicture.lastPicture();      dbPicture          .searchPictureByPatientId(widget.Patients.id.toString())          .then((picList) {        setState(() {          imageUrls = picList.map((pic) => pic.pictureLocation).toList();        });      });      // Load Treatment Plans from Database      _loadTreatmentPlans();    });  }  Future<void> _loadTreatmentPlans() async {    try {      List<TreatmentPlanModel> plans =          await dbTreatmentPlans.getTreatmentPlansByPatient(widget.Patients.id);      // Update the visual chart after loading plans      _rebuildUnifiedPlan();      setState(() {        treatmentPlans = plans;      });    } catch (e) {      debugPrint("Error loading treatment plans: $e");    }  }  Future<void> _saveTreatmentPlan(String toothNumber, String treatmentName,      String doctorName, bool isCompleted,      {bool showInfo = true}) async {    try {      TreatmentPlanModel plan = TreatmentPlanModel();      plan.patientId = widget.Patients.id;      plan.toothNumber = toothNumber;      plan.treatmentName = treatmentName;      plan.doctorName = doctorName;      plan.treatmentDate = DateTime.now().toString();      plan.isCompleted = isCompleted;      int id = await dbTreatmentPlans.addTreatmentPlan(plan);      if (id > 0) {        lastInsertedTreatmentPlanId = id;        // Reload plans from DB        await _loadTreatmentPlans();        // Force UI rebuild to show new item in list immediately        if (mounted) {          setState(() {});        }        if (showInfo && mounted) {          ScaffoldMessenger.of(context).showSnackBar(            const SnackBar(content: Text("تم وصف العلاج وإضافته للقائمة")),          );        }      }    } catch (e) {      debugPrint("Error saving treatment plan: $e");      if (mounted) {        ScaffoldMessenger.of(context).showSnackBar(          SnackBar(content: Text("خطأ في حفظ الخطة: \$e"), backgroundColor: Colors.red),        );      }    }  }  void _navigateToSalesInvoice(int treatmentPlanId, String toothNumber,      String treatmentName, String doctorName) {    // 1. Initialize for regular new invoice    VMSalesInvoice = ViewModelSalesInvoices.impty();    // 2. Pre-fill Patient Data    String pName = widget.Patients.name;    // We already have globals like allAccountingCoustmers, let's use them    VMSalesInvoice.AccountingGroups_select = 'المرضي';    VMSalesInvoice.AccountingPerson_select_name = pName;    VMSalesInvoice.selecedId(pName); // Sets AccountingPerson_select_id    // 3. Prepare Treatment Item    // We can use a consolidated name    String fullItemName = "سن $toothNumber: $treatmentName";    // Lookup item details if it exists in accounting index    String itemId = '';    double price = 0;    for (var e in allAccountingIndex) {      if (e.name == treatmentName || e.name == fullItemName) {        itemId = e.no.toString();        price = double.tryParse(e.selling_price) ?? 0;        break;      }    }    // 4. Create and add the row    // My change in SalesInvoices.dart check rows.isEmpty to skip reset    VMSalesInvoice.rows.add(      PlutoRow(        cells: {          'id': PlutoCell(value: '0'),          'id_invoice': PlutoCell(value: VMSalesInvoice.MaxInvoices),          'id_item': PlutoCell(value: itemId),          'name': PlutoCell(value: treatmentName),          'qty': PlutoCell(value: 1),          'price': PlutoCell(value: price),          'total': PlutoCell(value: price),          'delete': PlutoCell(value: ''),        },      ),    );    // Update totals in VM for the summary section    VMSalesInvoice.amount = price;    VMSalesInvoice.amount_all = price;    VMSalesInvoice.remaining = price;    // 5. Navigate to the official Sales Invoices page    Navigator.push(      context,      MaterialPageRoute(builder: (context) => const SalesInvoices()),    ).then((_) {      // Optional: Refresh clinical data if needed      _loadTreatmentPlans();    });  }  Future<void> _updateTreatmentPlanStatus(int planId, bool isCompleted) async {    try {      await dbTreatmentPlans.updateCompletionStatus(planId, isCompleted);      await _loadTreatmentPlans();      if (mounted) {        ScaffoldMessenger.of(context).showSnackBar(          SnackBar(            content: Text(                isCompleted ? "تم وضع علامة كمكتملة" : "تم إرجاع للعمل"),          ),        );      }    } catch (e) {      debugPrint("Error updating treatment plan status: $e");    }  }  Future<void> _deleteTreatmentPlan(int planId) async {    try {      await dbTreatmentPlans.deleteTreatmentPlan(planId);      await _loadTreatmentPlans();      if (mounted) {        ScaffoldMessenger.of(context).showSnackBar(          const SnackBar(content: Text("تم حذف الخطة بنجاح"), backgroundColor: Colors.green),        );      }    } catch (e) {      debugPrint("Error deleting treatment plan: $e");    }  }  Set<int> selectedPlanIds = {};  Future<void> _updateSelectedPlansStatus(bool completed) async {    for (int id in selectedPlanIds) {      await dbTreatmentPlans.updateCompletionStatus(id, completed);    }    await _loadTreatmentPlans();    setState(() {      selectedPlanIds.clear();    });    ScaffoldMessenger.of(context).showSnackBar(      SnackBar(          content: Text(completed              ? "تم تحديد العناصر كمكتملة"              : "تم تحديد العناصر كقيد التنفيذ")),    );  }  Future<void> _updateSelectedPlansDate(DateTime date) async {    // 1. Pick Time    final TimeOfDay? time = await showTimePicker(      context: context,      initialTime: TimeOfDay.now(),      builder: (context, child) {        return Directionality(textDirection: TextDirection.rtl, child: child!);      },    );    if (time == null) return;    // Combine Date and Time    final DateTime startDateTime = DateTime(      date.year,      date.month,      date.day,      time.hour,      time.minute,    );    // Default duration 30 mins    final DateTime endDateTime = startDateTime.add(const Duration(minutes: 30));    // Prepare data for appointment    String patientId = widget.Patients.id.toString();    String patientName = widget.Patients.name;    // Get distinct doctors from selected plans    Set<String> involvedDoctors = {};    List<String> treatmentNames = [];    for (int id in selectedPlanIds) {      try {        var plan = treatmentPlans.firstWhere((p) => p.id == id);        involvedDoctors.add(plan.doctorName);        treatmentNames.add("${plan.treatmentName} (السن ${plan.toothNumber})");      } catch (e) {        // Handle error      }    }    String doctorName = involvedDoctors.isNotEmpty        ? involvedDoctors.first        : "حسام العايدي"; // Default    // If multiple doctors, maybe prompt? For now, list first or "Combined"    if (involvedDoctors.length > 1) {      doctorName = involvedDoctors.join(" & ");    }    // Check if we can get doctor ID? The Doctor model isn't readily available mapped by name here easily    // without a lookup. DbDate expects String ID. We might need to look it up or just put name if ID not critical for display.    // Getting doctor ID from database would be better but let's try to find it in `listDoctors` or similar if possible.    // The `listDoctors` is just a list of strings (names).    // We'll use a placeholder or lookup if `_PHD_DoctorList` has keys.    // Looking at `_PHD_DoctorList` or `listDoctors`, it seems they are just Strings or basic lists.    // In `DbDate.adddate`, `dateDoctorid` is a String. We will use `0` or try to find it.    String doctorId = "0";    String notes = treatmentNames.join("، ");    // Get available rooms    final dbRooms = DbRooms();    List<RoomModel> rooms = [];    try {      await dbRooms.ensureDefaultRooms(); // Make sure table and defaults exist      rooms = await dbRooms.allRooms();    } catch (e) {      debugPrint("Error fetching rooms: $e");    }    // Default room    String selectedRoom = rooms.isNotEmpty ? rooms[0].name : "غرفة 1";    // Confirm booking dialog with Room Selection    bool confirm = await showDialog(            context: context,            builder: (context) {              String currentRoom = selectedRoom;              return StatefulBuilder(builder: (context, setState) {                return AlertDialog(                  title: const Text("تأكيد حجز الموعد"),                  content: SingleChildScrollView(                    child: Column(                      mainAxisSize: MainAxisSize.min,                      crossAxisAlignment: CrossAxisAlignment.start,                      children: [                        Text("المريض: $patientName"),                        Text("الدكتور: $doctorName"),                        Text(                            "التاريخ: ${startDateTime.toString().split('.')[0]}"),                        const SizedBox(height: 16),                        // Room Selection Dropdown                        DropdownButtonFormField<String>(                          value: currentRoom,                          decoration: const InputDecoration(                            labelText: 'اختيار الغرفة/العيادة',                            border: OutlineInputBorder(),                            contentPadding: EdgeInsets.symmetric(                                horizontal: 10, vertical: 5),                          ),                          items: rooms.map((room) {                            return DropdownMenuItem(                              value: room.name,                              child: Text(room.name),                            );                          }).toList(),                          onChanged: (value) {                            if (value != null) {                              setState(() {                                currentRoom = value;                                selectedRoom = value;                              });                            }                          },                        ),                        const SizedBox(height: 16),                        const Text("الإجراءات:",                            style: TextStyle(fontWeight: FontWeight.bold)),                        Text(notes,                            maxLines: 3, overflow: TextOverflow.ellipsis),                      ],                    ),                  ),                  actions: [                    TextButton(                        onPressed: () => Navigator.pop(context, false),                        child: const Text("إلغاء")),                    ElevatedButton(                        onPressed: () => Navigator.pop(context, true),                        child: const Text("تأكيد الحجز")),                  ],                );              });            }) ??        false;    if (!confirm) return;    // Update Plans in DB    for (int id in selectedPlanIds) {      try {        var plan = treatmentPlans.firstWhere((p) => p.id == id);        plan.treatmentDate = startDateTime.toString(); // Update date        await dbTreatmentPlans.updateTreatmentPlan(plan);      } catch (e) {        debugPrint("Error updating plan date: $e");      }    }    // Insert into Timetable (Dates)    try {      await DbDate().adddate(        'مواعيد المرضى', // Kind        selectedRoom, // Selected Room from Dialog        startDateTime.toString(), // Start        endDateTime.toString(), // End        notes, // Note        doctorId, // Doctor ID        doctorName, // Doctor Name        patientId, // Customer ID        patientName, // Customer Name      );    } catch (e) {      debugPrint("Error adding to timetable: $e");      ScaffoldMessenger.of(context).showSnackBar(        SnackBar(content: Text("خطأ في إضافة الموعد للجدول: \$e")),      );      return;    }    await _loadTreatmentPlans();    setState(() {      selectedPlanIds.clear();    });    if (mounted) {      ScaffoldMessenger.of(context).showSnackBar(        const SnackBar(content: Text("تم تحديد الموعد وإضافته للجدول")),      );    }  }  Future<void> _deleteSelectedPlans() async {    for (int id in selectedPlanIds) {      await dbTreatmentPlans.deleteTreatmentPlan(id);    }    await _loadTreatmentPlans();    setState(() {      selectedPlanIds.clear();    });    ScaffoldMessenger.of(context).showSnackBar(      const SnackBar(content: Text("تم حذف العناصر المحددة"), backgroundColor: Colors.green),    );  }  Widget _buildTreatmentPlansList() {    if (treatmentPlans.isEmpty) {      return Center(        child: Padding(          padding: const EdgeInsets.all(20),          child: Column(            mainAxisAlignment: MainAxisAlignment.center,            children: [              Icon(Icons.list_alt, size: 48, color: Colors.grey[400]),              const SizedBox(height: 12),              Text(                "لا توجد خطط علاجية محفوظة",                style: TextStyle(                  fontSize: 16,                  color: Colors.grey[600],                  fontWeight: FontWeight.w500,                ),              ),            ],          ),        ),      );    }    // Group by TREATMENT NAME    Map<String, List<TreatmentPlanModel>> groupedByTreatment = {};    for (var plan in treatmentPlans) {      if (!groupedByTreatment.containsKey(plan.treatmentName)) {        groupedByTreatment[plan.treatmentName] = [];      }      groupedByTreatment[plan.treatmentName]!.add(plan);    }    return Column(      children: [        // Action Bar when items are selected        if (selectedPlanIds.isNotEmpty)          Container(            padding: const EdgeInsets.all(8),            margin: const EdgeInsets.only(bottom: 10),            decoration: BoxDecoration(              color: Colors.blue.withOpacity(0.1),              borderRadius: BorderRadius.circular(8),              border: Border.all(color: Colors.blue.withOpacity(0.3)),            ),            child: Row(              children: [                Text(                  "تحديد (${selectedPlanIds.length})",                  style: const TextStyle(fontWeight: FontWeight.bold),                ),                const Spacer(),                IconButton(                  icon: const Icon(Icons.check_circle, color: Colors.green),                  tooltip: "الكل مكتمل",                  onPressed: () => _updateSelectedPlansStatus(true),                ),                IconButton(                  icon: const Icon(Icons.calendar_month, color: Colors.orange),                  tooltip: "تحديد موعد",                  onPressed: () async {                    final date = await pickDate(context);                    if (date != null) {                      _updateSelectedPlansDate(date);                    }                  },                ),                IconButton(                  icon: const Icon(Icons.receipt_long, color: Colors.blue),                  tooltip: "إضافة فاتورة",                  onPressed: () {                    if (selectedPlanIds.isNotEmpty) {                      final planId = selectedPlanIds.first;                      final plan =                          treatmentPlans.firstWhere((p) => p.id == planId);                      _navigateToSalesInvoice(plan.id, plan.toothNumber,                          plan.treatmentName, plan.doctorName);                    } else {                      ScaffoldMessenger.of(context).showSnackBar(                        const SnackBar(                            content: Text("يرجى اختيار عنصر واحد على الأقل")),                      );                    }                  },                ),                IconButton(                  icon: const Icon(Icons.delete, color: Colors.red),                  tooltip: "حذف المحددة",                  onPressed: () => _deleteSelectedPlans(),                ),              ],            ),          ),        // List        ...groupedByTreatment.entries.map((entry) {          String treatmentName = entry.key;          List<TreatmentPlanModel> plans = entry.value;          // Check if all children in this group are selected          bool allSelected = plans.every((p) => selectedPlanIds.contains(p.id));          bool someSelected =              plans.any((p) => selectedPlanIds.contains(p.id)) && !allSelected;          return Card(            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 0),            child: ExpansionTile(              leading: Checkbox(                value: allSelected ? true : (someSelected ? null : false),                tristate: true,                onChanged: (val) {                  setState(() {                    if (val == true || val == null) {                      // Select all                      for (var p in plans) {                        selectedPlanIds.add(p.id);                      }                    } else {                      // Deselect all                      for (var p in plans) {                        selectedPlanIds.remove(p.id);                      }                    }                  });                },              ),              title: Text(                "$treatmentName (${plans.length})",                style: const TextStyle(fontWeight: FontWeight.bold),              ),              initiallyExpanded: true,              children: plans.map((plan) {                bool isSelected = selectedPlanIds.contains(plan.id);                return Container(                  color: isSelected ? Colors.blue.withOpacity(0.05) : null,                  child: ListTile(                    leading: Checkbox(                      value: isSelected,                      onChanged: (val) {                        setState(() {                          if (val == true) {                            selectedPlanIds.add(plan.id);                          } else {                            selectedPlanIds.remove(plan.id);                          }                        });                      },                    ),                    title: Text("السن ${plan.toothNumber}"),                    subtitle: Text(                      "${plan.doctorName} | ${plan.treatmentDate.split(' ')[0]}",                      style: const TextStyle(fontSize: 12),                    ),                    trailing: Row(                      mainAxisSize: MainAxisSize.min,                      children: [                        if (plan.isCompleted)                          const Icon(Icons.check_circle,                              color: Colors.green, size: 20)                        else                          const Icon(Icons.schedule,                              color: Colors.orange, size: 20),                        const SizedBox(width: 4),                        // Quick Action: Book Appointment                        IconButton(                          icon: const Icon(Icons.calendar_month,                              color: Colors.orange, size: 20),                          tooltip: "حجز موعد",                          constraints: const BoxConstraints(),                          padding: EdgeInsets.zero,                          onPressed: () async {                            final date = await pickDate(context);                            if (date != null) {                              setState(() {                                selectedPlanIds.clear();                                selectedPlanIds.add(plan.id);                              });                              _updateSelectedPlansDate(date);                            }                          },                        ),                        // Quick Action: Invoice                        IconButton(                          icon: const Icon(Icons.receipt_long,                              color: Colors.blue, size: 20),                          tooltip: "فاتورة",                          constraints: const BoxConstraints(),                          padding: EdgeInsets.zero,                          onPressed: () => _navigateToSalesInvoice(                            plan.id,                            plan.toothNumber,                            plan.treatmentName,                            plan.doctorName,                          ),                        ),                        PopupMenuButton<String>(                          onSelected: (value) {                            if (value == 'complete') {                              _updateTreatmentPlanStatus(                                plan.id,                                !plan.isCompleted,                              );                            }                          },                          itemBuilder: (BuildContext context) => [                            PopupMenuItem<String>(                              value: 'complete',                              child: Text(plan.isCompleted                                  ? 'تحديد كغير مكتمل'                                  : 'تحديد كمكتمل'),                            ),                          ],                        ),                      ],                    ),                  ),                );              }).toList(),            ),          );        }).toList(),      ],    );  }  void _showAddTreatmentDialog() {    // استخراج الإجراءات من الرسومات    List<String> chartItems = _getChartItems();    // Filter out items already saved in the database    List<String> unsavedChartItems = [];    for (var item in chartItems) {      final parts = item.split(':');      if (parts.length == 2) {        String tooth = parts[0].trim();        String treatment = parts[1].trim();        bool alreadySaved = treatmentPlans.any((plan) =>            plan.toothNumber == tooth && plan.treatmentName == treatment);        if (!alreadySaved) {          unsavedChartItems.add(item);        }      }    }    // إذا كانت هناك إجراءات من الرسومات، نعرض حوار لاختيار الطبيب أولاً    if (unsavedChartItems.isNotEmpty) {      _showSelectDoctorDialog(unsavedChartItems);    } else {      // إذا لم تكن هناك إجراءات، نعرض رسالة إعلام      ScaffoldMessenger.of(context).showSnackBar(        const SnackBar(          content: Text("يرجى تحديد الأسنان من الرسومات أولاً"),          backgroundColor: Colors.amber,          duration: Duration(seconds: 2),        ),      );    }  }  void _showSelectDoctorDialog(List<String> unsavedChartItems) {    String selectedDoctor =        listDoctors.isNotEmpty ? listDoctors[0] : "حسام العايدي";    showDialog(      context: context,      barrierDismissible: false,      builder: (context) {        return StatefulBuilder(          builder: (context, setState) {            return AlertDialog(              title: const Text('تحديد الطبيب المعالج'),              content: SingleChildScrollView(                child: Column(                  mainAxisSize: MainAxisSize.min,                  crossAxisAlignment: CrossAxisAlignment.stretch,                  children: [                    Card(                      color: Colors.blue[50],                      child: Padding(                        padding: const EdgeInsets.all(12),                        child: Row(                          children: [                            Icon(Icons.info, color: Colors.blue[700]),                            const SizedBox(width: 8),                            Expanded(                              child: Text(                                'تم العثور على ${unsavedChartItems.length} إجراء في الرسومات',                                style: TextStyle(                                  fontSize: 13,                                  color: Colors.blue[700],                                  fontWeight: FontWeight.bold,                                ),                              ),                            ),                          ],                        ),                      ),                    ),                    const SizedBox(height: 16),                    const Text(                      'الإجراءات المختارة:',                      style:                          TextStyle(fontWeight: FontWeight.bold, fontSize: 13),                    ),                    const SizedBox(height: 8),                    Container(                      padding: const EdgeInsets.all(10),                      decoration: BoxDecoration(                        border: Border.all(color: Colors.grey[300]!),                        borderRadius: BorderRadius.circular(8),                        color: Colors.grey[50],                      ),                      child: Column(                        crossAxisAlignment: CrossAxisAlignment.start,                        children: unsavedChartItems                            .map((item) => Padding(                                  padding:                                      const EdgeInsets.symmetric(vertical: 4),                                  child: Row(                                    children: [                                      Icon(Icons.check_circle,                                          size: 18, color: Colors.green[600]),                                      const SizedBox(width: 8),                                      Expanded(                                        child: Text(                                          item,                                          style: const TextStyle(                                              fontSize: 12,                                              fontWeight: FontWeight.w500),                                          overflow: TextOverflow.ellipsis,                                        ),                                      ),                                    ],                                  ),                                ))                            .toList(),                      ),                    ),                    const SizedBox(height: 20),                    // Doctor Selection Dropdown - إجباري                    Container(                      decoration: BoxDecoration(                        border: Border.all(color: Colors.orange, width: 3),                        borderRadius: BorderRadius.circular(8),                        color: Colors.orange[50],                      ),                      padding: const EdgeInsets.all(12),                      child: Column(                        crossAxisAlignment: CrossAxisAlignment.start,                        children: [                          Row(                            children: [                              Icon(Icons.person_rounded,                                  color: Colors.orange[800], size: 22),                              const SizedBox(width: 10),                              Expanded(                                child: Column(                                  crossAxisAlignment: CrossAxisAlignment.start,                                  children: [                                    const Text(                                      'اختر الطبيب المعالج',                                      style: TextStyle(                                        fontSize: 13,                                        fontWeight: FontWeight.bold,                                        color: Colors.orange,                                      ),                                    ),                                    const Text(                                      '* إجباري',                                      style: TextStyle(                                        fontSize: 11,                                        color: Colors.red,                                        fontWeight: FontWeight.w600,                                      ),                                    ),                                  ],                                ),                              ),                            ],                          ),                          const SizedBox(height: 12),                          DropdownButtonFormField<String>(                            value: selectedDoctor,                            decoration: InputDecoration(                              labelText: 'اختر اسم الدكتور',                              labelStyle: const TextStyle(                                  fontSize: 13, fontWeight: FontWeight.bold),                              prefixIcon: Icon(Icons.medical_services_rounded,                                  color: Colors.orange[800]),                              border: OutlineInputBorder(                                borderRadius: BorderRadius.circular(8),                                borderSide: BorderSide(                                    color: Colors.orange[800]!, width: 2),                              ),                              enabledBorder: OutlineInputBorder(                                borderRadius: BorderRadius.circular(8),                                borderSide: BorderSide(                                    color: Colors.orange[800]!, width: 2),                              ),                              filled: true,                              fillColor: Colors.white,                            ),                            items: listDoctors                                .map((doc) => DropdownMenuItem(                                    value: doc,                                    child: Text(doc,                                        style: const TextStyle(                                            fontSize: 14,                                            fontWeight: FontWeight.w600))))                                .toList(),                            onChanged: (value) {                              setState(() {                                selectedDoctor = value ?? selectedDoctor;                              });                            },                            isExpanded: true,                          ),                        ],                      ),                    ),                  ],                ),              ),              actions: [                TextButton(                  onPressed: () => Navigator.pop(context),                  child: const Text('إلغاء'),                ),                ElevatedButton.icon(                  onPressed: () async {                    if (selectedDoctor.isNotEmpty) {                      int addedCount = 0;                      for (String item in unsavedChartItems) {                        final parts = item.split(':');                        if (parts.length == 2) {                          await _saveTreatmentPlan(                              parts[0], parts[1], selectedDoctor, false,                              showInfo: false);                          addedCount++;                        }                      }                      if (addedCount > 0 && mounted) {                        ScaffoldMessenger.of(context).showSnackBar(                          SnackBar(                            content:                                Text("تم إضافة $addedCount إجراءات بنجاح"),                            backgroundColor: Colors.green,                          ),                        );                      }                      if (mounted) Navigator.pop(context);                    } else {                      ScaffoldMessenger.of(context).showSnackBar(                        const SnackBar(                          content: Text('يرجى اختيار اسم الدكتور قبل الحفظ'),                          backgroundColor: Colors.orange,                          duration: Duration(seconds: 2),                        ),                      );                    }                  },                  icon: const Icon(Icons.check_circle),                  label: const Text('تأكيد واضافة'),                  style: ElevatedButton.styleFrom(                    backgroundColor: Colors.green,                    foregroundColor: Colors.white,                    padding: const EdgeInsets.symmetric(                        horizontal: 20, vertical: 12),                  ),                ),              ],            );          },        );      },    );  }  void _showAddFromListDialog() {    showDialog<void>(      context: context,      builder: (BuildContext context) {        String? selectedTooth;        String selectedTreatment = '';        String selectedDoctor = listDoctors.isNotEmpty ? listDoctors[0] : '';        return StatefulBuilder(          builder: (context, setState) {            return AlertDialog(              title: const Text('إضافة إجراء من القائمة'),              content: SingleChildScrollView(                child: Column(                  mainAxisSize: MainAxisSize.min,                  children: [                    DropdownButtonFormField<String>(                      value:                          selectedTreatment.isEmpty ? null : selectedTreatment,                      decoration: const InputDecoration(                        labelText: 'اختر الإجراء العلاجي',                      ),                      items: commonTreatments                          .map(                              (t) => DropdownMenuItem(value: t, child: Text(t)))                          .toList(),                      onChanged: (v) =>                          setState(() => selectedTreatment = v ?? ''),                    ),                    const SizedBox(height: 16),                    DropdownButtonFormField<String>(                      value: selectedTooth,                      decoration:                          const InputDecoration(labelText: 'اختر رقم السن'),                      items: [                        '17',                        '16',                        '15',                        '14',                        '13',                        '12',                        '11',                        '21',                        '22',                        '23',                        '24',                        '25',                        '26',                        '27',                        '28',                        '38',                        '37',                        '36',                        '35',                        '34',                        '33',                        '32',                        '31',                        '41',                        '42',                        '43',                        '44',                        '45',                        '46',                        '47',                        '48'                      ]                          .toSet() // Fix duplicates                          .toList()                          .map(                              (t) => DropdownMenuItem(value: t, child: Text(t)))                          .toList(),                      onChanged: (v) => setState(() => selectedTooth = v),                    ),                    const SizedBox(height: 16),                    // Doctor Selection Dropdown - إجباري                    Container(                      decoration: BoxDecoration(                        border: Border.all(color: Colors.orange, width: 2),                        borderRadius: BorderRadius.circular(8),                        color: Colors.orange[50],                      ),                      padding: const EdgeInsets.all(12),                      child: Column(                        crossAxisAlignment: CrossAxisAlignment.start,                        children: [                          Row(                            children: [                              Icon(Icons.person_rounded,                                  color: Colors.orange[800], size: 20),                              const SizedBox(width: 8),                              const Text(                                'اختيار إجباري: اسم الدكتور',                                style: TextStyle(                                  fontSize: 14,                                  fontWeight: FontWeight.bold,                                  color: Colors.orange,                                ),                              ),                            ],                          ),                          const SizedBox(height: 10),                          DropdownButtonFormField<String>(                            value: selectedDoctor,                            decoration: InputDecoration(                              labelText: 'اختر اسم الدكتور',                              prefixIcon:                                  const Icon(Icons.medical_services_rounded),                              border: OutlineInputBorder(                                borderRadius: BorderRadius.circular(8),                              ),                              filled: true,                              fillColor: Colors.white,                            ),                            items: listDoctors                                .map((d) => DropdownMenuItem(                                    value: d,                                    child: Text(d,                                        style: const TextStyle(                                            fontSize: 14,                                            fontWeight: FontWeight.w500))))                                .toList(),                            onChanged: (v) => setState(                                () => selectedDoctor = v ?? selectedDoctor),                            isExpanded: true,                          ),                        ],                      ),                    ),                  ],                ),              ),              actions: [                TextButton(                  onPressed: () => Navigator.pop(context),                  child: const Text('إلغاء'),                ),                ElevatedButton(                  onPressed: () async {                    if (selectedTooth == null || selectedTreatment.isEmpty) {                      ScaffoldMessenger.of(context).showSnackBar(                        const SnackBar(                          content: Text('يرجى اختيار السن والإجراء العلاجي'),                          backgroundColor: Colors.red,                        ),                      );                      return;                    }                    if (selectedDoctor.isEmpty) {                      ScaffoldMessenger.of(context).showSnackBar(                        const SnackBar(                          content: Text('يرجى اختيار اسم الدكتور قبل الحفظ'),                          backgroundColor: Colors.orange,                        ),                      );                      return;                    }                    await _saveTreatmentPlan(selectedTooth!, selectedTreatment,                        selectedDoctor, false);                    if (mounted) Navigator.pop(context);                  },                  child: const Text('حفظ'),                ),              ],            );          },        );      },    );  }  InputDecoration inputDecoration(IconData icon, String hintText) {    return InputDecoration(      prefixIcon: Icon(icon, size: 35),      hintText: hintText,      filled: true,      fillColor: Colors.white,      hintStyle: const TextStyle(fontSize: 20),      errorStyle: const TextStyle(color: Colors.red, fontSize: 13, fontWeight: FontWeight.bold),      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300, width: 1),), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primaryColor, width: 2),),      errorBorder: const OutlineInputBorder(        borderSide: BorderSide(width: 4, color: Color(0xffF02E65)),      ),      border: const OutlineInputBorder(borderSide: BorderSide(width: 1)),    );  }  InputDecoration inputDecorationNoIcon(String hintText) {    return InputDecoration(      hintText: hintText,      filled: true,      fillColor: Colors.white,      hintStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),      errorStyle: const TextStyle(color: Colors.red, fontSize: 13, fontWeight: FontWeight.bold),      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300, width: 1),), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primaryColor, width: 2),),      errorBorder: const OutlineInputBorder(        borderSide: BorderSide(width: 4, color: Color(0xffF02E65)),      ),      border: const OutlineInputBorder(borderSide: BorderSide(width: 1)),    );  }  @override  Widget build(BuildContext context) {    return DefaultTabController(        length: myTabs.length,        child: Scaffold(          key: _scaffoldKey,          backgroundColor: AppTheme.primaryColor,          appBar: AppBar(            title: const Text('تعديل بيانات المرضى'),            bottom: TabBar(              tabs: myTabs,              labelStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),              labelColor: Colors.white,              unselectedLabelStyle:                  TextStyle(fontSize: 16, fontWeight: FontWeight.normal),              unselectedLabelColor: Colors.grey,              dividerColor: Colors.black,              indicatorColor: Colors.pink,              indicatorWeight: 3,              isScrollable: true,            ),          ),          body: TabBarView(            // controller:_tabController,            // clipBehavior: Clip.hardEdge,            children: [              Container(                child: FisrtPage(context),              ),              Container(                child: SecondPage(context),              ),              Container(child: FivePage(context)),              Container(child: ThirdPage(context)),              Container(child: FourPage(context)),            ],          ),        ),
+import 'package:path/path.dart' as p;
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:hussam_clinc/db/patients/dbpatienthealthdoctor.dart';
+import 'package:hussam_clinc/db/patients/dbpicture.dart';
+import 'package:hussam_clinc/model/patients/PatientHealthDoctorModel.dart';
+import 'package:intl/intl.dart' as tt;
+import 'package:photo_view/photo_view.dart';
+import '../../db/dbemployee.dart';
+import '../../db/patients/dbpatient.dart';
+import '../../db/patients/dbpatienthealth.dart';
+import 'package:hussam_clinc/db/dbdate.dart';
+import '../../db/patients/dbtreatmentplans.dart';
+import '../../db/patients/dbinvoices.dart';
+import '../../global_var/globals.dart';
+import '../../main.dart';
+import 'package:galleryimage/galleryimage.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
+import '../../model/patients/PatientModel.dart';
+import '../../model/patients/TreatmentPlanModel.dart';
+import '../../model/patients/InvoiceModel.dart';
+import '../../model/DatesModel.dart';
+import '../../dialog/dating_add_dialog.dart';
+import '../../widgets/dental_chart.dart';
+import '../accounting/invoices/SalesInvoices.dart';
+import '../../View_model/ViewModelSalesInvoices.dart';
+import '../../db/accounting/vouchers/dbvouchers.dart';
+import '../../model/accounting/VoucherModel.dart';
+import '../../db/accounting/journal/dbjournaldetails.dart';
+import '../accounting/vouchers/receiptVoucher.dart';
+import '../../db/accounting/invoices/dbinvoices.dart' as acc;
+import '../../model/accounting/invoices/InvoicesModel.dart' as accModel;
+import 'package:pluto_grid/pluto_grid.dart';
+import '../../reports/reportSalesInvoicePDF.dart';
+import '../../reports/reportVoucherPDF.dart';
+
+class PageEditCostumers extends StatefulWidget {
+  final PatientModel Patients;
+  final int initialIndex;
+  const PageEditCostumers(this.Patients, {super.key, this.initialIndex = 0});
+  @override
+  State<PageEditCostumers> createState() => _PageEditCostumersState();
+}
+
+DateTime projectStartDate = DateTime.now();
+
+class _PageEditCostumersState extends State<PageEditCostumers> {
+  List<PatienHealthtDoctorModel> allPHD = [];
+  List<bool> PHD_edit = [];
+  List<String> imageUrls = [];
+
+  int paint_id = 1;
+  var _patient_name, _patient_mobile, _patient_fileNo;
+  var _patient_mobile2;
+  var _patient_resone;
+  var _patient_worries = "نعم";
+  var _patient_place, _patient_sex = 'ذكر';
+  String _patient_birthDate =
+      '${projectStartDate.day}/${projectStartDate.month}/${projectStartDate.year}';
+
+  var _patient_status = 'أعزب';
+  GlobalKey<FormState> formstate = GlobalKey<FormState>();
+  GlobalKey<FormState> formstate2 = GlobalKey<FormState>();
+  GlobalKey<FormState> formstate3 = GlobalKey<FormState>();
+  late List<GlobalObjectKey<FormState>> formstateList = List.generate(
+      0, (int index) => GlobalObjectKey<FormState>(index),
+      growable: true);
+  final List<GlobalObjectKey<FormState>> formstateList2 = List.generate(
+      5, (int index) => GlobalObjectKey<FormState>(index),
+      growable: true);
+
+  var costumer_sex_items = [
+    "ذكر",
+    "أنثى",
+  ];
+  var costumer_status_items = [
+    "متزوج",
+    "أعزب",
+    "أرمل",
+  ];
+  var costumer_worries_items = [
+    "نعم",
+    "لا",
+    "نوعا ما",
+  ];
+  var _patient_health;
+  var _patient_sensitive = false, _patient_sensitive_Ex = "";
+  var _patient_surgical = false, _patient_surgical_Ex = "";
+  var _patient_haemophilia = false, _patient_haemophilia_Ex = "";
+  var _patient_drugs = false, _patient_drugs_Ex = "";
+  var _patient_oralDiseases, _patient_smoking = false;
+  var _patient_pregnant = false, _patient_pregnant_Ex = "";
+  var _patient_lactating = false, _patient_lactating_Ex = "";
+  var _patient_contraception = false, _patient_contraception_Ex = "";
+
+  List<String> listDoctors = [];
+  final String _PHD_DoctorList = '';
+  String _currentTreatmentPlan = "";
+
+  // Treatment Plans Variables
+  List<TreatmentPlanModel> treatmentPlans = [];
+  DbTreatmentPlans dbTreatmentPlans = DbTreatmentPlans();
+  DbInvoices dbInvoices = DbInvoices();
+  String selectedDoctorForPlan = "حسام العايدي";
+
+  // Invoice Variables
+  int? lastInsertedTreatmentPlanId;
+  List<String> paymentMethods = ['نقدي', 'بطاقة ائتمان', 'شيك', 'تحويل بنكي'];
+
+  // New Variables for Appointments and Invoices
+  List<DateModel> _patientAppointments = [];
+  List<InvoiceModel> _patientInvoices = [];
+  List<accModel.InvoicesModel> _patientAccountingInvoices = [];
+  List<VoucherModel> _patientVouchers = [];
+  DbDate dbDate = DbDate();
+  List<dynamic> _unifiedFinancialRecords = [];
+  double _totalInvoices = 0;
+  double _totalReceipts = 0;
+  double _remainingBalance = 0;
+
+  void _rebuildUnifiedPlan() {
+    Map<String, Map<String, dynamic>> unified = {};
+
+    // Sort to process oldest first (newer records will update/overwrite status)
+    List<PatienHealthtDoctorModel> sortedPHD = List.from(allPHD);
+    try {
+      sortedPHD.sort((a, b) => tt.DateFormat("dd/MM/yyyy")
+          .parse(a.date)
+          .compareTo(tt.DateFormat("dd/MM/yyyy").parse(b.date)));
+    } catch (e) {
+      debugPrint("Sort error in unified plan: $e");
+    }
+
+    for (var record in sortedPHD) {
+      // 1. Process Plan Strings [الخطة العلاجية: ...]
+      if (record.treatment.contains("[الخطة العلاجية:")) {
+        RegExp planExp = RegExp(r'\[الخطة العلاجية: (.*?)\]');
+        var match = planExp.firstMatch(record.treatment);
+        if (match != null) {
+          String content = match.group(1) ?? "";
+          List<String> parts = content.split(RegExp(r'[،,] '));
+          for (var part in parts) {
+            List<String> sub = part.split('|');
+            if (sub.length >= 2) {
+              String tooth = sub[0].trim();
+              String proc = sub[1].trim();
+              bool completed = sub.length >= 3
+                  ? sub[2].trim().toLowerCase() == 'true'
+                  : false;
+              String doc = sub.length >= 4 ? sub[3].trim() : record.doctorName;
+
+              unified["$tooth|$proc"] = {
+                'tooth': tooth,
+                'proc': proc,
+                'completed': completed,
+                'doctor': doc
+              };
+            }
+          }
+        }
+      }
+
+      // 2. Extract from plain visit text "سن X: Y"
+      // This ensures items added in "Treatment Details" show up in the "Treatment Plan" chart
+      RegExp visitExp = RegExp(r'سن (\d+):\s*(.*?)(?=\n|$)');
+      var matches = visitExp.allMatches(record.treatment);
+      for (var m in matches) {
+        String tooth = m.group(1)!;
+        String proc = m.group(2)!.trim();
+        // If it was in a plain visit record, we consider it completed
+        unified["$tooth|$proc"] = {
+          'tooth': tooth,
+          'proc': proc,
+          'completed': true,
+          'doctor': record.doctorName
+        };
+      }
+    }
+
+    // 3. Process from Database Treatment Plans (New Table)
+    // This ensures items saved via "Save Chart to List" are reflected back in the chart
+    for (var plan in treatmentPlans) {
+      String key = "${plan.toothNumber}|${plan.treatmentName}";
+      unified[key] = {
+        'tooth': plan.toothNumber,
+        'proc': plan.treatmentName,
+        'completed': plan.isCompleted,
+        'doctor': plan.doctorName
+      };
+    }
+
+    List<String> parts = [];
+    for (var item in unified.values) {
+      parts.add(
+          "${item['tooth']}|${item['proc']}|${item['completed']}|${item['doctor']}");
+    }
+
+    if (parts.isNotEmpty) {
+      setState(() {
+        _currentTreatmentPlan = "[الخطة العلاجية: ${parts.join(', ')}]";
+      });
+    }
+  }
+
+  Map<String, List<String>> getGroupedPlannedTreatments() {
+    Map<String, List<String>> grouped = {};
+    if (_currentTreatmentPlan.isEmpty) return grouped;
+
+    try {
+      RegExp planExp = RegExp(r'\[الخطة العلاجية: (.*?)\]');
+      var match = planExp.firstMatch(_currentTreatmentPlan);
+      if (match != null) {
+        String content = match.group(1) ?? "";
+        List<String> parts =
+            content.contains('، ') ? content.split('، ') : content.split(', ');
+        for (var part in parts) {
+          if (part.contains('|')) {
+            List<String> sub = part.split('|');
+            if (sub.length >= 2) {
+              String tooth = sub[0].trim();
+              String proc = sub[1].trim();
+              if (proc.isNotEmpty) {
+                if (!grouped.containsKey(proc)) {
+                  grouped[proc] = [];
+                }
+                if (!grouped[proc]!.contains(tooth)) {
+                  grouped[proc]!.add(tooth);
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error parsing planned treatments: $e");
+    }
+    return grouped;
+  }
+
+  /// استخراج جميع عناصر (tooth:treatment) من الرسومات
+  List<String> _getChartItems() {
+    List<String> items = [];
+    if (_currentTreatmentPlan.isEmpty) return items;
+
+    try {
+      RegExp planExp = RegExp(r'\[الخطة العلاجية: (.*?)\]');
+      var match = planExp.firstMatch(_currentTreatmentPlan);
+      if (match != null) {
+        String content = match.group(1) ?? "";
+        List<String> parts =
+            content.contains('، ') ? content.split('، ') : content.split(', ');
+
+        for (var part in parts) {
+          if (part.contains('|')) {
+            List<String> sub = part.split('|');
+            if (sub.length >= 2) {
+              String tooth = sub[0].trim();
+              String treatment = sub[1].trim();
+              if (tooth.isNotEmpty && treatment.isNotEmpty) {
+                items.add('$tooth:$treatment');
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error extracting chart items: $e");
+    }
+    return items;
+  }
+
+  final List<String> commonTreatments = [
+    "فحص دوري (Checkup)",
+    "تشخيص شامل (Diagnosis)",
+    "تنظيف أسنان (Scaling)",
+    "تلميع أسنان (Polishing)",
+    "حشوة كمبوزيت (Composite Filling)",
+    "حشوة أملغم (Amalgam Filling)",
+    "حشوة مؤقتة (Temporary Filling)",
+    "علاج عصب - جلسة واحدة (Root Canal - Single)",
+    "علاج عصب - جلسات متعددة (Root Canal - Multi)",
+    "إعادة علاج عصب (Re-Root Canal)",
+    "خلع بسيط (Simple Extraction)",
+    "خلع جراحي (Surgical Extraction)",
+    "خلع ضرس العقل (Wisdom Tooth Extraction)",
+    "قص اللثة (Gingivectomy)",
+    "تلبيسة زيركون (Zirconia Crown)",
+    "تلبيسة بورسلين (Porcelain Crown)",
+    "جسر أسنان (Dental Bridge)",
+    "فينيير (Veneers)",
+    "زراعة سن (Dental Implant)",
+    "تطعيم عظمي (Bone Graft)",
+    "تبييض أسنان (Teeth Whitening)",
+    "واقي ليلي (Night Guard)",
+    "تقويم أسنان (Orthodontics)",
+    "حافظ مسافة (Space Maintainer)",
+    "صورة أشعة صغيرة (Periapical X-Ray)",
+    "صورة بانوراما (Panorama X-Ray)",
+    "طقم أسنان كامل (Full Denture)",
+    "طقم أسنان جزئي (Partial Denture)",
+  ];
+
+  List<Tab> get myTabs => const <Tab>[
+        Tab(text: 'معلومات عامة'),
+        Tab(text: 'معلومات صحية'),
+        Tab(text: 'الخطة العلاجية'),
+        Tab(text: 'تفاصيل العلاج'),
+        Tab(text: 'صور الأسنان'),
+        Tab(text: 'المواعيد'),
+        Tab(text: 'كشف الحساب'),
+      ];
+
+  bool editCheck = true;
+  bool editCheckhealth = false;
+  bool editCheckHealthDoctor = false;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  var numberFormat = tt.NumberFormat("00000", "en_US");
+  final ImagePicker picker = ImagePicker();
+  XFile? imageFile;
+
+  ButtonStyle FirstClick = ButtonStyle(
+    backgroundColor: WidgetStateProperty.all<Color>(Colors.white),
+    textStyle: WidgetStateProperty.all(
+      const TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
+    ),
+    fixedSize: WidgetStateProperty.all(const Size(280, 50)),
+    side: WidgetStateProperty.all(
+      const BorderSide(
+        color: Colors.deepPurple,
+        width: 2,
+      ),
+    ),
+    shape: WidgetStateProperty.all(
+      RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
+    ),
+    alignment: Alignment.center,
+  );
+  ButtonStyle SecondClick = ButtonStyle(
+    backgroundColor: WidgetStateProperty.all<Color>(Colors.white12),
+    textStyle: WidgetStateProperty.all(
+      const TextStyle(
+          fontSize: 25, fontWeight: FontWeight.bold, color: Colors.white),
+    ),
+    fixedSize: WidgetStateProperty.all(const Size(280, 50)),
+    side: WidgetStateProperty.all(
+      const BorderSide(
+        color: Colors.blueGrey,
+        width: 2,
+      ),
+    ),
+    shape: WidgetStateProperty.all(
+      RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
+    ),
+    alignment: Alignment.center,
+  );
+
+  Future<void> editCostumers(context) async {
+    var formdata = formstate.currentState;
+    if (formdata!.validate()) {
+      formdata.save();
+      if (editCheck == true) {
+        // Perform the update immediately instead of waiting for a SnackBar action
+        DbPatient dbPatient = DbPatient();
+        await dbPatient.updateFileNoPatient(
+            _patient_name,
+            _patient_mobile,
+            _patient_mobile2,
+            _patient_sex,
+            _patient_status,
+            _patient_birthDate,
+            _patient_fileNo,
+            _patient_place,
+            _patient_resone,
+            _patient_worries);
+
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+            'تم تعديل بيانات المريض بنجاح',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          duration: Duration(seconds: 3),
+        ));
+
+        editCheck = false;
+        AllPatientList();
+      }
+    }
+  }
+
+  Future<void> editeCostumerhealth(context) async {
+    var formdata = formstate2.currentState;
+    if (formdata!.validate()) {
+      formdata.save();
+      for (int i = 0; i < allPatient.length; i++) {
+        var paint = allPatient[i];
+        if (int.parse(paint.fileNo) == int.parse(_patient_fileNo)) {
+          editCheck = false;
+          paint_id = paint.id;
+          i = allPatient.length - 1;
+        }
+      }
+      if (editCheckhealth == false) {
+        DbPatientHealth dbPatientHealth = DbPatientHealth();
+        dbPatientHealth.addPatientHealth(
+            paint_id.toString(),
+            _patient_health,
+            _patient_sensitive.toString(),
+            _patient_sensitive_Ex,
+            _patient_surgical.toString(),
+            _patient_surgical_Ex,
+            _patient_haemophilia.toString(),
+            _patient_haemophilia_Ex,
+            _patient_drugs.toString(),
+            _patient_drugs_Ex,
+            _patient_oralDiseases,
+            _patient_smoking.toString(),
+            _patient_pregnant.toString(),
+            _patient_pregnant_Ex,
+            _patient_lactating.toString(),
+            _patient_lactating_Ex,
+            _patient_contraception.toString(),
+            _patient_contraception_Ex);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+            ' تم إضافة  البيانات الصحية للمريض بنجاح ',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          duration: Duration(seconds: 4),
+        ));
+        editCheckhealth = true;
+        AllPatientList();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          action: SnackBarAction(
+            textColor: Colors.white,
+            backgroundColor: Colors.pinkAccent,
+            label: 'تعديل الملف ',
+            onPressed: () {
+              DbPatientHealth dbPatientHealth = DbPatientHealth();
+              dbPatientHealth.addPatientHealth(
+                  paint_id.toString(),
+                  _patient_health,
+                  _patient_sensitive.toString(),
+                  _patient_sensitive_Ex,
+                  _patient_surgical.toString(),
+                  _patient_surgical_Ex,
+                  _patient_haemophilia.toString(),
+                  _patient_haemophilia_Ex,
+                  _patient_drugs.toString(),
+                  _patient_drugs_Ex,
+                  _patient_oralDiseases,
+                  _patient_smoking.toString(),
+                  _patient_pregnant.toString(),
+                  _patient_pregnant_Ex,
+                  _patient_lactating.toString(),
+                  _patient_lactating_Ex,
+                  _patient_contraception.toString(),
+                  _patient_contraception_Ex);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text(
+                  ' تم تعديل بيانات المريض بنجاح ',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                duration: Duration(seconds: 4),
+              ));
+              AllPatientList();
+            },
+          ),
+          content: const Column(
+            children: [
+              Text(
+                'لم يتم إضافة البيانات لأن البيانات مكررة يرجى مراجعة البيانات ',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          duration: const Duration(seconds: 5),
+        ));
+      }
+      AllPatientList();
+    }
+  }
+
+  @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+    setState(() {
+      selecedDoctorList();
+      intValues();
+    });
+  }
+
+  void intValues() {
+    DbPatientHealth()
+        .getPatientHealth(widget.Patients.id.toString())
+        .then((HP) {
+      if (!mounted || HP == null) return;
+      setState(() {
+        _patient_health = HP.health;
+        _patient_sensitive = bool.parse(HP.sensitive.toLowerCase());
+        _patient_sensitive_Ex = HP.sensitive_Ex;
+        _patient_surgical = bool.parse(HP.surgical.toLowerCase());
+        _patient_surgical_Ex = HP.surgical_Ex;
+        _patient_haemophilia = bool.parse(HP.haemophilia.toLowerCase());
+        _patient_haemophilia_Ex = HP.haemophilia_Ex;
+        _patient_drugs = bool.parse(HP.drugs.toLowerCase());
+        _patient_drugs_Ex = HP.drugs_Ex;
+        _patient_oralDiseases = HP.oralDiseases;
+        _patient_smoking = bool.parse(HP.smoking.toLowerCase());
+        _patient_pregnant = bool.parse(HP.pregnant.toLowerCase());
+        _patient_pregnant_Ex = HP.pregnant_Ex;
+        _patient_lactating = bool.parse(HP.lactating.toLowerCase());
+        _patient_lactating_Ex = HP.lactating_Ex;
+        _patient_contraception = bool.parse(HP.contraception.toLowerCase());
+        _patient_contraception_Ex = HP.contraception_Ex;
+      });
+    });
+    DbPatientHealthDoctor dbPatientHealthDoctor = DbPatientHealthDoctor();
+    setState(() {
+      dbPatientHealthDoctor.searchByPatientId(widget.Patients.id).then((value) {
+        if (!mounted) return;
+        setState(() {
+          allPHD = value;
+          PHD_edit = List.generate(allPHD.length, (index) => false);
+          formstateList = List.generate(
+              allPHD.length, (int index) => GlobalObjectKey<FormState>(index),
+              growable: true);
+        });
+
+        // Load latest dental chart plan if it exists
+        for (var record in value) {
+          if (record.treatment.contains("[الخطة العلاجية:")) {
+            setState(() {
+              _currentTreatmentPlan = record.treatment;
+            });
+            break;
+          }
+        }
+      });
+      paint_id = widget.Patients.id;
+      _patient_name = widget.Patients.name.toString();
+      _patient_mobile = widget.Patients.mobile.toString();
+      _patient_mobile2 = (widget.Patients as dynamic).mobile2?.toString() ?? '';
+      _patient_fileNo = widget.Patients.fileNo.toString();
+      _patient_resone = widget.Patients.resone.toString();
+      _patient_worries = "لا";
+      _patient_place = widget.Patients.address.toString();
+      _patient_sex = widget.Patients.sex.toString() == 'M' ||
+              widget.Patients.sex.toString() == ''
+          ? 'ذكر'
+          : widget.Patients.sex.toString();
+      //(widget.Patients.birthDay.isEmpty || widget.Patients.birthDay=='')?print('widget.Patients.birthDay'):print('rrrrrrrrrrrrrrffffffrr===${widget.Patients.birthDay}   ');
+      projectStartDate = (widget.Patients.birthDay.isEmpty ||
+              widget.Patients.birthDay == 'null')
+          ? projectStartDate
+          : tt.DateFormat("dd/MM/yyyy").parse(widget.Patients.birthDay);
+      _patient_birthDate = widget.Patients.birthDay.toString() == ''
+          ? '${projectStartDate.day}/${projectStartDate.month}/${projectStartDate.year}'
+          : widget.Patients.birthDay.toString();
+      _patient_status = 'أعزب';
+
+      /// find Max No of Picture
+      DbPicture dbPicture = DbPicture();
+      dbPicture.lastPicture();
+      dbPicture
+          .searchPictureByPatientId(widget.Patients.id.toString())
+          .then((picList) {
+        if (!mounted) return;
+        setState(() {
+          imageUrls = picList.map((pic) => pic.pictureLocation).toList();
+        });
+      });
+
+      // Load Treatment Plans from Database
+      _loadTreatmentPlans();
+      _loadAppointments();
+      _loadInvoices();
+    });
+  }
+
+  Future<void> _loadAppointments() async {
+    try {
+      List<DateModel> all =
+          await dbDate.getDatesByPatient(widget.Patients.id.toString());
+      if (!mounted) return;
+      setState(() {
+        _patientAppointments = all;
+      });
+    } catch (e) {
+      debugPrint("Error loading appointments: $e");
+    }
+  }
+
+  Future<void> _loadInvoices() async {
+    try {
+      List<InvoiceModel> invoices =
+          await dbInvoices.getInvoicesByPatient(widget.Patients.id);
+      if (!mounted) return;
+      setState(() {
+        _patientInvoices = invoices;
+      });
+      _loadVouchers();
+    } catch (e) {
+      debugPrint("Error loading invoices: $e");
+    }
+  }
+
+  Future<void> _loadVouchers() async {
+    try {
+      String patientId = widget.Patients.id.toString();
+      String accountingNo = widget.Patients.fileNo.toString();
+
+      // Load accounting customers if list is empty
+      if (allAccountingCoustmers.isEmpty) {
+        await AllPaitentsTreeList();
+      }
+
+      // Look up correct accounting IDs by name matching
+      String searchName = widget.Patients.name.trim();
+      for (var e in allAccountingCoustmers) {
+        if (e.name.trim() == searchName) {
+          patientId = e.id.toString(); // Actual ID in database
+          accountingNo =
+              e.branch_no.toString(); // Account Number (typically fileNo)
+          break;
+        }
+      }
+      debugPrint(
+          "Matched Patient: $searchName -> ID: $patientId, Account: $accountingNo");
+
+      // Fetch vouchers (try both patientId and accountingNo to be thorough)
+      List<Map<String, dynamic>> rawVouchers =
+          await DbVouchers().getVouchersByAccount(patientId);
+      Map<int, Map<String, dynamic>> dedupVouchers = {
+        for (var v in rawVouchers) v['voucher_id'] as int: v
+      };
+
+      if (accountingNo != patientId) {
+        final rawVouchers2 =
+            await DbVouchers().getVouchersByAccount(accountingNo);
+        for (var v in rawVouchers2) {
+          int vid = v['voucher_id'] as int;
+          if (!dedupVouchers.containsKey(vid)) dedupVouchers[vid] = v;
+        }
+      }
+      List<Map<String, dynamic>> res = dedupVouchers.values.toList();
+      debugPrint("Found ${res.length} unique vouchers");
+
+      // Fetch journals (try both)
+      List<Map<String, dynamic>> rawJournals =
+          await DbJournalDetails().searchJournalsByAccountWithDate(patientId);
+      Map<int, Map<String, dynamic>> dedupJournals = {
+        for (var j in rawJournals) j['JD_id'] as int: j
+      };
+      if (accountingNo != patientId) {
+        final rawJournals2 = await DbJournalDetails()
+            .searchJournalsByAccountWithDate(accountingNo);
+        for (var j in rawJournals2) {
+          int jid = j['JD_id'] as int;
+          if (!dedupJournals.containsKey(jid)) dedupJournals[jid] = j;
+        }
+      }
+      final journals = dedupJournals.values.toList();
+      debugPrint("Found ${journals.length} unique journals");
+
+      // Fetch accounting invoices (try both)
+      final rawAccInvoices =
+          await acc.DbInvoices().getInvoicesByAccount(accountingNo);
+      Map<int, accModel.InvoicesModel> dedupInvoices = {
+        for (var inv in rawAccInvoices) inv.id: inv
+      };
+      if (patientId != accountingNo) {
+        final rawAccInvoices2 =
+            await acc.DbInvoices().getInvoicesByAccount(patientId);
+        for (var inv in rawAccInvoices2) {
+          if (!dedupInvoices.containsKey(inv.id)) dedupInvoices[inv.id] = inv;
+        }
+      }
+      final accInvoices = dedupInvoices.values.toList();
+      debugPrint("Found ${accInvoices.length} unique accounting invoices");
+
+      if (!mounted) return;
+      setState(() {
+        _patientVouchers = res.map((e) => VoucherModel.fromMap(e)).toList();
+        _patientAccountingInvoices = accInvoices;
+      });
+      _calculateFinancialSummary();
+    } catch (e) {
+      debugPrint("Error loading vouchers: $e");
+    }
+  }
+
+  void _calculateFinancialSummary() {
+    Map<String, dynamic> uniqueFinancialRecords = {};
+
+    // 1. Process Clinical Invoices
+    for (var i in _patientInvoices) {
+      String key =
+          "CI-${i.treatmentName}-${i.invoiceDate.split(' ')[0]}-${i.treatmentCost}";
+      if (!uniqueFinancialRecords.containsKey(key)) {
+        uniqueFinancialRecords[key] = i;
+      }
+    }
+
+    // 2. Process Accounting Invoices
+    for (var i in _patientAccountingInvoices) {
+      String key = "AI-${i.id}-${i.date.split(' ')[0]}-${i.amount_all}";
+      if (!uniqueFinancialRecords.containsKey(key)) {
+        uniqueFinancialRecords[key] = i;
+      }
+    }
+
+    // 3. Process Vouchers
+    for (var v in _patientVouchers) {
+      String key = "V-${v.id}-${v.date.split(' ')[0]}-${v.payment}";
+      if (!uniqueFinancialRecords.containsKey(key)) {
+        uniqueFinancialRecords[key] = v;
+      }
+    }
+
+    List<dynamic> allRecords = uniqueFinancialRecords.values.toList();
+
+    // Sort logic
+    allRecords.sort((a, b) {
+      String dateA = (a is InvoiceModel)
+          ? a.invoiceDate
+          : (a is accModel.InvoicesModel)
+              ? a.date
+              : (a is VoucherModel)
+                  ? a.date
+                  : "";
+      String dateB = (b is InvoiceModel)
+          ? b.invoiceDate
+          : (b is accModel.InvoicesModel)
+              ? b.date
+              : (b is VoucherModel)
+                  ? b.date
+                  : "";
+      try {
+        DateTime dtA = tt.DateFormat("dd/MM/yyyy").parse(dateA.split(' ')[0]);
+        DateTime dtB = tt.DateFormat("dd/MM/yyyy").parse(dateB.split(' ')[0]);
+        return dtA.compareTo(dtB);
+      } catch (e) {
+        return dateA.compareTo(dateB);
+      }
+    });
+
+    double totalInvoices = 0;
+    double totalReceipts = 0;
+
+    for (var record in allRecords) {
+      if (record is InvoiceModel) {
+        totalInvoices += record.treatmentCost;
+      } else if (record is accModel.InvoicesModel) {
+        totalInvoices += (double.tryParse(record.amount_all) ?? 0.0);
+      } else if (record is VoucherModel) {
+        if (record.className == 'قبض') {
+          totalReceipts += (double.tryParse(record.payment) ?? 0.0);
+        }
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _unifiedFinancialRecords = allRecords;
+        _totalInvoices = totalInvoices;
+        _totalReceipts = totalReceipts;
+        _remainingBalance = totalInvoices - totalReceipts;
+      });
+    }
+  }
+
+  Future<void> _loadTreatmentPlans() async {
+    try {
+      List<TreatmentPlanModel> plans =
+          await dbTreatmentPlans.getTreatmentPlansByPatient(widget.Patients.id);
+      // Update the visual chart after loading plans
+      _rebuildUnifiedPlan();
+
+      if (!mounted) return;
+      setState(() {
+        treatmentPlans = plans;
+      });
+    } catch (e) {
+      debugPrint("Error loading treatment plans: $e");
+    }
+  }
+
+  Future<void> _saveTreatmentPlan(String toothNumber, String treatmentName,
+      String doctorName, bool isCompleted,
+      {bool showInfo = true}) async {
+    try {
+      TreatmentPlanModel plan = TreatmentPlanModel();
+      plan.patientId = widget.Patients.id;
+      plan.toothNumber = toothNumber;
+      plan.treatmentName = treatmentName;
+      plan.doctorName = doctorName;
+      plan.treatmentDate = DateTime.now().toString();
+      plan.isCompleted = isCompleted;
+
+      int id = await dbTreatmentPlans.addTreatmentPlan(plan);
+      if (id > 0) {
+        lastInsertedTreatmentPlanId = id;
+
+        // Reload plans from DB
+        await _loadTreatmentPlans();
+
+        // Force UI rebuild to show new item in list immediately
+        if (mounted) {
+          setState(() {});
+        }
+
+        if (showInfo && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("✅ تم وصف العلاج وإضافته للقائمة")),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint("Error saving treatment plan: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ خطأ في حفظ الخطة: $e")),
+        );
+      }
+    }
+  }
+
+  void _navigateToSalesInvoice(int treatmentPlanId, String toothNumber,
+      String treatmentName, String doctorName) {
+    // 1. Initialize for regular new invoice
+    VMSalesInvoice = ViewModelSalesInvoices.impty();
+
+    // 2. Pre-fill Patient Data
+    String pName = widget.Patients.name;
+    // We already have globals like allAccountingCoustmers, let's use them
+    VMSalesInvoice.AccountingGroups_select = 'المرضي';
+    VMSalesInvoice.AccountingPerson_select_name = pName;
+    VMSalesInvoice.selecedId(pName); // Sets AccountingPerson_select_id
+
+    // 3. Prepare Treatment Item
+    // We can use a consolidated name
+    String fullItemName = "سن $toothNumber: $treatmentName";
+
+    // Lookup item details if it exists in accounting index
+    String itemId = '';
+    double price = 0;
+    for (var e in allAccountingIndex) {
+      if (e.name == treatmentName || e.name == fullItemName) {
+        itemId = e.no.toString();
+        price = double.tryParse(e.selling_price) ?? 0;
+        break;
+      }
+    }
+
+    // 4. Create and add the row
+    // My change in SalesInvoices.dart check rows.isEmpty to skip reset
+    VMSalesInvoice.rows.add(
+      PlutoRow(
+        cells: {
+          'id': PlutoCell(value: '0'),
+          'id_invoice': PlutoCell(value: VMSalesInvoice.MaxInvoices),
+          'id_item': PlutoCell(value: itemId),
+          'name': PlutoCell(value: treatmentName),
+          'qty': PlutoCell(value: 1),
+          'price': PlutoCell(value: price),
+          'total': PlutoCell(value: price),
+          'delete': PlutoCell(value: ''),
+        },
+      ),
+    );
+
+    // Update totals in VM for the summary section
+    VMSalesInvoice.amount = price;
+    VMSalesInvoice.amount_all = price;
+    VMSalesInvoice.remaining = price;
+
+    // 5. Navigate to the official Sales Invoices page
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const SalesInvoices()),
+    ).then((_) {
+      // Optional: Refresh clinical data if needed
+      _loadTreatmentPlans();
+    });
+  }
+
+  Future<void> _updateTreatmentPlanStatus(int planId, bool isCompleted) async {
+    try {
+      await dbTreatmentPlans.updateCompletionStatus(planId, isCompleted);
+      await _loadTreatmentPlans();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                isCompleted ? "✅ تم وضع علامة كمكتملة" : "⏳ تم إرجاع للعمل"),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("Error updating treatment plan status: $e");
+    }
+  }
+
+  Future<void> _deleteTreatmentPlan(int planId) async {
+    try {
+      await dbTreatmentPlans.deleteTreatmentPlan(planId);
+      await _loadTreatmentPlans();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("✅ تم حذف الخطة بنجاح")),
+        );
+      }
+    } catch (e) {
+      debugPrint("Error deleting treatment plan: $e");
+    }
+  }
+
+  Set<int> selectedPlanIds = {};
+
+  Future<void> _updateSelectedPlansStatus(bool completed) async {
+    for (int id in selectedPlanIds) {
+      await dbTreatmentPlans.updateCompletionStatus(id, completed);
+    }
+    await _loadTreatmentPlans();
+    setState(() {
+      selectedPlanIds.clear();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content: Text(completed
+              ? "✅ تم تحديد العناصر كمكتملة"
+              : "✅ تم تحديد العناصر كقيد التنفيذ")),
+    );
+  }
+
+  Future<void> _updateSelectedPlansDate() async {
+    final DateTime? startDateTime = await showDialog<DateTime>(
+      context: context,
+      builder: (context) => DatingAddDialog(
+        title: "إضافة موعد جديد",
+        positiveBtnText: "حفظ",
+        negativeBtnText: "إلغاء",
+        patientName: widget.Patients.name,
+      ),
+    );
+
+    if (startDateTime == null) return;
+
+    // Update Plans in DB
+    for (int id in selectedPlanIds) {
+      try {
+        var plan = treatmentPlans.firstWhere((p) => p.id == id);
+        plan.treatmentDate = startDateTime.toString(); // Update date
+        await dbTreatmentPlans.updateTreatmentPlan(plan);
+      } catch (e) {
+        debugPrint("Error updating plan date: $e");
+      }
+    }
+
+    await _loadTreatmentPlans();
+    await _loadAppointments(); // Refresh appointment list after adding a new one
+    setState(() {
+      selectedPlanIds.clear();
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("✅ تم تحديد الموعد وإضافته للجدول")),
+      );
+    }
+  }
+
+  Future<void> _deleteSelectedPlans() async {
+    for (int id in selectedPlanIds) {
+      await dbTreatmentPlans.deleteTreatmentPlan(id);
+    }
+    await _loadTreatmentPlans();
+    setState(() {
+      selectedPlanIds.clear();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("✅ تم حذف العناصر المحددة")),
+    );
+  }
+
+  Widget _buildTreatmentPlansList() {
+    if (treatmentPlans.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.list_alt, size: 48, color: Colors.grey[400]),
+              const SizedBox(height: 12),
+              Text(
+                "لا توجد خطط علاجية محفوظة",
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Group by TREATMENT NAME
+    Map<String, List<TreatmentPlanModel>> groupedByTreatment = {};
+    for (var plan in treatmentPlans) {
+      if (!groupedByTreatment.containsKey(plan.treatmentName)) {
+        groupedByTreatment[plan.treatmentName] = [];
+      }
+      groupedByTreatment[plan.treatmentName]!.add(plan);
+    }
+
+    return Column(
+      children: [
+        // Action Bar when items are selected
+        if (selectedPlanIds.isNotEmpty)
+          Container(
+            padding: const EdgeInsets.all(8),
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  "تحديد (${selectedPlanIds.length})",
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.check_circle, color: Colors.green),
+                  tooltip: "الكل مكتمل",
+                  onPressed: () => _updateSelectedPlansStatus(true),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.calendar_month, color: Colors.orange),
+                  tooltip: "تحديد موعد",
+                  onPressed: _updateSelectedPlansDate,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.receipt_long, color: Colors.blue),
+                  tooltip: "إضافة فاتورة",
+                  onPressed: () {
+                    if (selectedPlanIds.isNotEmpty) {
+                      final planId = selectedPlanIds.first;
+                      final plan =
+                          treatmentPlans.firstWhere((p) => p.id == planId);
+                      _navigateToSalesInvoice(plan.id, plan.toothNumber,
+                          plan.treatmentName, plan.doctorName);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text("يرجى اختيار عنصر واحد على الأقل")),
+                      );
+                    }
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                  tooltip: "حذف المحددة",
+                  onPressed: () => _deleteSelectedPlans(),
+                ),
+              ],
+            ),
+          ),
+
+        // List
+        ...groupedByTreatment.entries.map((entry) {
+          String treatmentName = entry.key;
+          List<TreatmentPlanModel> plans = entry.value;
+
+          // Check if all children in this group are selected
+          bool allSelected = plans.every((p) => selectedPlanIds.contains(p.id));
+          bool someSelected =
+              plans.any((p) => selectedPlanIds.contains(p.id)) && !allSelected;
+
+          return Card(
+            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 0),
+            child: ExpansionTile(
+              leading: Checkbox(
+                value: allSelected ? true : (someSelected ? null : false),
+                tristate: true,
+                onChanged: (val) {
+                  setState(() {
+                    if (val == true || val == null) {
+                      // Select all
+                      for (var p in plans) {
+                        selectedPlanIds.add(p.id);
+                      }
+                    } else {
+                      // Deselect all
+                      for (var p in plans) {
+                        selectedPlanIds.remove(p.id);
+                      }
+                    }
+                  });
+                },
+              ),
+              title: Text(
+                "$treatmentName (${plans.length})",
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              initiallyExpanded: true,
+              children: plans.map((plan) {
+                bool isSelected = selectedPlanIds.contains(plan.id);
+                return Container(
+                  color: isSelected ? Colors.blue.withOpacity(0.05) : null,
+                  child: ListTile(
+                    leading: Checkbox(
+                      value: isSelected,
+                      onChanged: (val) {
+                        setState(() {
+                          if (val == true) {
+                            selectedPlanIds.add(plan.id);
+                          } else {
+                            selectedPlanIds.remove(plan.id);
+                          }
+                        });
+                      },
+                    ),
+                    title: Text("السن ${plan.toothNumber}"),
+                    subtitle: Text(
+                      "${plan.doctorName} | ${plan.treatmentDate.split(' ')[0]}",
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (plan.isCompleted)
+                          const Icon(Icons.check_circle,
+                              color: Colors.green, size: 20)
+                        else
+                          const Icon(Icons.schedule,
+                              color: Colors.orange, size: 20),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          icon: const Icon(Icons.calendar_month,
+                              color: Colors.orange, size: 20),
+                          tooltip: "حجز موعد",
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                          onPressed: () async {
+                            setState(() {
+                              selectedPlanIds.clear();
+                              selectedPlanIds.add(plan.id);
+                            });
+                            _updateSelectedPlansDate();
+                          },
+                        ),
+                        // Quick Action: Invoice
+                        IconButton(
+                          icon: const Icon(Icons.receipt_long,
+                              color: Colors.blue, size: 20),
+                          tooltip: "فاتورة",
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                          onPressed: () => _navigateToSalesInvoice(
+                            plan.id,
+                            plan.toothNumber,
+                            plan.treatmentName,
+                            plan.doctorName,
+                          ),
+                        ),
+                        PopupMenuButton<String>(
+                          onSelected: (value) {
+                            if (value == 'complete') {
+                              _updateTreatmentPlanStatus(
+                                plan.id,
+                                !plan.isCompleted,
+                              );
+                            }
+                          },
+                          itemBuilder: (BuildContext context) => [
+                            PopupMenuItem<String>(
+                              value: 'complete',
+                              child: Text(plan.isCompleted
+                                  ? 'تحديد كغير مكتمل'
+                                  : 'تحديد كمكتمل'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          );
+        }).toList(),
+      ],
+    );
+  }
+
+  void _showAddTreatmentDialog() {
+    // استخراج الإجراءات من الرسومات
+    List<String> chartItems = _getChartItems();
+
+    // Filter out items already saved in the database
+    List<String> unsavedChartItems = [];
+    for (var item in chartItems) {
+      final parts = item.split(':');
+      if (parts.length == 2) {
+        String tooth = parts[0].trim();
+        String treatment = parts[1].trim();
+
+        bool alreadySaved = treatmentPlans.any((plan) =>
+            plan.toothNumber == tooth && plan.treatmentName == treatment);
+
+        if (!alreadySaved) {
+          unsavedChartItems.add(item);
+        }
+      }
+    }
+
+    // إذا كانت هناك إجراءات من الرسومات، نعرض حوار لاختيار الطبيب أولاً
+    if (unsavedChartItems.isNotEmpty) {
+      _showSelectDoctorDialog(unsavedChartItems);
+    } else {
+      // إذا لم تكن هناك إجراءات، نعرض رسالة إعلام
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("⚠️ يرجى تحديد الأسنان من الرسومات أولاً"),
+          backgroundColor: Colors.amber,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  void _showSelectDoctorDialog(List<String> unsavedChartItems) {
+    String selectedDoctor =
+        listDoctors.isNotEmpty ? listDoctors[0] : "حسام العايدي";
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('تحديد الطبيب المعالج'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Card(
+                      color: Colors.blue[50],
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info, color: Colors.blue[700]),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'تم العثور على ${unsavedChartItems.length} إجراء في الرسومات',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.blue[700],
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'الإجراءات المختارة:',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[300]!),
+                        borderRadius: BorderRadius.circular(8),
+                        color: Colors.grey[50],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: unsavedChartItems
+                            .map((item) => Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 4),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.check_circle,
+                                          size: 18, color: Colors.green[600]),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          item,
+                                          style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ))
+                            .toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Doctor Selection Dropdown - إجباري
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.orange, width: 3),
+                        borderRadius: BorderRadius.circular(8),
+                        color: Colors.orange[50],
+                      ),
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.person_rounded,
+                                  color: Colors.orange[800], size: 22),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'اختر الطبيب المعالج',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.orange,
+                                      ),
+                                    ),
+                                    const Text(
+                                      '* إجباري',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.red,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<String>(
+                            value: selectedDoctor,
+                            decoration: InputDecoration(
+                              labelText: 'اختر اسم الدكتور',
+                              labelStyle: const TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.bold),
+                              prefixIcon: Icon(Icons.medical_services_rounded,
+                                  color: Colors.orange[800]),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(
+                                    color: Colors.orange[800]!, width: 2),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(
+                                    color: Colors.orange[800]!, width: 2),
+                              ),
+                              filled: true,
+                              fillColor: Colors.white,
+                            ),
+                            items: listDoctors
+                                .map((doc) => DropdownMenuItem(
+                                    value: doc,
+                                    child: Text(doc,
+                                        style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600))))
+                                .toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                selectedDoctor = value ?? selectedDoctor;
+                              });
+                            },
+                            isExpanded: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('إلغاء'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    if (selectedDoctor.isNotEmpty) {
+                      int addedCount = 0;
+                      for (String item in unsavedChartItems) {
+                        final parts = item.split(':');
+                        if (parts.length == 2) {
+                          await _saveTreatmentPlan(
+                              parts[0], parts[1], selectedDoctor, false,
+                              showInfo: false);
+                          addedCount++;
+                        }
+                      }
+
+                      if (addedCount > 0 && mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content:
+                                Text("✅ تم إضافة $addedCount إجراءات بنجاح"),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+
+                      if (mounted) Navigator.pop(context);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('⚠️ يرجى اختيار اسم الدكتور قبل الحفظ'),
+                          backgroundColor: Colors.orange,
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.check_circle),
+                  label: const Text('تأكيد واضافة'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showAddFromListDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        String? selectedTooth;
+        String selectedTreatment = '';
+        String selectedDoctor = listDoctors.isNotEmpty ? listDoctors[0] : '';
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('إضافة إجراء من القائمة'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value:
+                          selectedTreatment.isEmpty ? null : selectedTreatment,
+                      decoration: const InputDecoration(
+                        labelText: 'اختر الإجراء العلاجي',
+                      ),
+                      items: commonTreatments
+                          .map(
+                              (t) => DropdownMenuItem(value: t, child: Text(t)))
+                          .toList(),
+                      onChanged: (v) =>
+                          setState(() => selectedTreatment = v ?? ''),
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: selectedTooth,
+                      decoration:
+                          const InputDecoration(labelText: 'اختر رقم السن'),
+                      items: [
+                        '17',
+                        '16',
+                        '15',
+                        '14',
+                        '13',
+                        '12',
+                        '11',
+                        '21',
+                        '22',
+                        '23',
+                        '24',
+                        '25',
+                        '26',
+                        '27',
+                        '28',
+                        '38',
+                        '37',
+                        '36',
+                        '35',
+                        '34',
+                        '33',
+                        '32',
+                        '31',
+                        '41',
+                        '42',
+                        '43',
+                        '44',
+                        '45',
+                        '46',
+                        '47',
+                        '48'
+                      ]
+                          .toSet() // Fix duplicates
+                          .toList()
+                          .map(
+                              (t) => DropdownMenuItem(value: t, child: Text(t)))
+                          .toList(),
+                      onChanged: (v) => setState(() => selectedTooth = v),
+                    ),
+                    const SizedBox(height: 16),
+                    // Doctor Selection Dropdown - إجباري
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.orange, width: 2),
+                        borderRadius: BorderRadius.circular(8),
+                        color: Colors.orange[50],
+                      ),
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.person_rounded,
+                                  color: Colors.orange[800], size: 20),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'اختيار إجباري: اسم الدكتور',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.orange,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          DropdownButtonFormField<String>(
+                            value: selectedDoctor,
+                            decoration: InputDecoration(
+                              labelText: 'اختر اسم الدكتور',
+                              prefixIcon:
+                                  const Icon(Icons.medical_services_rounded),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              filled: true,
+                              fillColor: Colors.white,
+                            ),
+                            items: listDoctors
+                                .map((d) => DropdownMenuItem(
+                                    value: d,
+                                    child: Text(d,
+                                        style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500))))
+                                .toList(),
+                            onChanged: (v) => setState(
+                                () => selectedDoctor = v ?? selectedDoctor),
+                            isExpanded: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('إلغاء'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (selectedTooth == null || selectedTreatment.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('❌ يرجى اختيار السن والإجراء العلاجي'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+                    if (selectedDoctor.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('⚠️ يرجى اختيار اسم الدكتور قبل الحفظ'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                      return;
+                    }
+                    await _saveTreatmentPlan(selectedTooth!, selectedTreatment,
+                        selectedDoctor, false);
+                    if (mounted) Navigator.pop(context);
+                  },
+                  child: const Text('حفظ'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  InputDecoration inputDecoration(IconData icon, String hintText) {
+    return InputDecoration(
+      prefixIcon: Icon(icon, size: 35),
+      hintText: hintText,
+      filled: true,
+      fillColor: Colors.white,
+      hintStyle: const TextStyle(fontSize: 20),
+      errorStyle: const TextStyle(
+          color: Colors.yellow, fontSize: 15, fontWeight: FontWeight.bold),
+      enabledBorder: const OutlineInputBorder(
+        borderSide: BorderSide(width: 1, color: Colors.white),
+      ),
+      focusedBorder: const OutlineInputBorder(
+        borderSide: BorderSide(width: 3, color: Colors.white),
+      ),
+      errorBorder: const OutlineInputBorder(
+        borderSide: BorderSide(width: 4, color: Color(0xffF02E65)),
+      ),
+      border: const OutlineInputBorder(borderSide: BorderSide(width: 1)),
+    );
+  }
+
+  InputDecoration inputDecorationNoIcon(String hintText) {
+    return InputDecoration(
+      hintText: hintText,
+      filled: true,
+      fillColor: Colors.white,
+      hintStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+      errorStyle: const TextStyle(
+          color: Colors.yellow, fontSize: 15, fontWeight: FontWeight.bold),
+      enabledBorder: const OutlineInputBorder(
+        borderSide: BorderSide(width: 1, color: Colors.white),
+      ),
+      focusedBorder: const OutlineInputBorder(
+        borderSide: BorderSide(width: 3, color: Colors.white),
+      ),
+      errorBorder: const OutlineInputBorder(
+        borderSide: BorderSide(width: 4, color: Color(0xffF02E65)),
+      ),
+      border: const OutlineInputBorder(borderSide: BorderSide(width: 1)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: DefaultTabController(
+        length: myTabs.length,
+        initialIndex: widget.initialIndex,
+        child: Scaffold(
+          key: _scaffoldKey,
+          backgroundColor: Color(0xFF1D9D99),
+          appBar: AppBar(
+            title: const Text('تعديل بيانات المرضى',
+                style: TextStyle(color: Colors.white)),
+            backgroundColor: const Color(0xFF167774),
+            bottom: TabBar(
+              isScrollable: true,
+              tabs: myTabs,
+              labelStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              labelColor: Colors.white,
+              unselectedLabelStyle:
+                  TextStyle(fontSize: 16, fontWeight: FontWeight.normal),
+              unselectedLabelColor: Colors.grey,
+              dividerColor: Colors.black,
+              indicatorColor: Colors.pink,
+              indicatorWeight: 3,
+            ),
+          ),
+          body: TabBarView(
+            // controller:_tabController,
+            // clipBehavior: Clip.hardEdge,
+            children: [
+              Container(
+                child: FisrtPage(context),
+              ),
+              Container(
+                child: SecondPage(context),
+              ),
+              Container(child: FivePage(context)),
+              Container(child: ThirdPage(context)),
+              Container(child: FourPage(context)),
+              Container(child: SixPage(context)),
+              Container(child: SevenPage(context)),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -17,7 +1742,7 @@
                 style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
-                    color: AppTheme.secondaryColor),
+                    color: Color(0xFF167774)),
               ),
               const Divider(thickness: 2),
               const SizedBox(height: 10),
@@ -45,7 +1770,7 @@
                 style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
-                    color: AppTheme.secondaryColor),
+                    color: Color(0xFF167774)),
               ),
               const Divider(thickness: 2),
               const SizedBox(height: 10),
@@ -549,11 +2274,11 @@
                           Text(
                             'تعديل بيانات المريض',
                             style: TextStyle(
-                                color: AppTheme.secondaryColor, fontSize: 20),
+                                color: Color(0xFF167774), fontSize: 20),
                           ),
                           Icon(
                             Icons.save_outlined,
-                            color: AppTheme.secondaryColor,
+                            color: Color(0xFF167774),
                           ),
                         ],
                       )),
@@ -1199,11 +2924,11 @@
                           Text(
                             ' احفظ البيانات الصحية ',
                             style: TextStyle(
-                                color: AppTheme.secondaryColor, fontSize: 20),
+                                color: Color(0xFF167774), fontSize: 20),
                           ),
                           Icon(
                             Icons.save_outlined,
-                            color: AppTheme.secondaryColor,
+                            color: Color(0xFF167774),
                           ),
                         ],
                       )),
@@ -1368,7 +3093,7 @@
                               IconButton(
                                 icon: Icon(Icons.save_rounded,
                                     color: PHD_edit[i]
-                                        ? Colors.amber
+                                        ? Colors.yellowAccent
                                         : Colors.white70,
                                     size: 28),
                                 tooltip: "حفظ التغييرات",
@@ -1516,9 +3241,8 @@
                                         DbEmployee()
                                             .searchingEmployee(val)
                                             .then((list) {
-                                          if (list.isNotEmpty) {
-                                            setState(() => allPHD[i]
-                                                    .doctorId =
+                                          if (list != null && list.isNotEmpty) {
+                                            setState(() => allPHD[i].doctorId =
                                                 list[0]['employee_id']
                                                     .toString());
                                           }
@@ -1693,23 +3417,38 @@
                                           ...group.value.map((tooth) {
                                             String label =
                                                 "سن $tooth: ${group.key}";
+                                            
+                                            // التحقق مما إذا كان هذا الإجراء قد تم اختياره في زيارة أخرى بالفعل
+                                            bool isDoneInOtherVisit = false;
+                                            for (int k = 0; k < allPHD.length; k++) {
+                                              if (k != i && allPHD[k].treatment.contains(label)) {
+                                                isDoneInOtherVisit = true;
+                                                break;
+                                              }
+                                            }
+
+                                            bool isCheckedInCurrentVisit = allPHD[i].treatment.contains(label);
+
                                             return CheckboxListTile(
                                               dense: true,
+                                              activeColor: isDoneInOtherVisit ? Colors.grey : null,
                                               title: Text(label,
-                                                  style: const TextStyle(
-                                                      fontSize: 14)),
-                                              value: allPHD[i]
-                                                  .treatment
-                                                  .contains(label),
-                                              onChanged: (val) {
+                                                  style: TextStyle(
+                                                      fontSize: 14,
+                                                      color: isDoneInOtherVisit ? Colors.grey : (isCheckedInCurrentVisit ? Colors.green.shade700 : Colors.black),
+                                                      fontWeight: isDoneInOtherVisit ? FontWeight.normal : (isCheckedInCurrentVisit ? FontWeight.bold : FontWeight.normal),
+                                                      decoration: isDoneInOtherVisit ? TextDecoration.lineThrough : null,
+                                                  )),
+                                              // إذا تم في زيارة أخرى، يظهر كمؤشر مختار ولكن معطل
+                                              value: isDoneInOtherVisit || isCheckedInCurrentVisit,
+                                              onChanged: isDoneInOtherVisit ? null : (val) {
                                                 setState(() {
                                                   if (val == true) {
-                                                    allPHD[i]
-                                                        .treatment = allPHD[i]
-                                                            .treatment
-                                                            .isEmpty
-                                                        ? label
-                                                        : "$label\n${allPHD[i].treatment}";
+                                                    allPHD[i].treatment = allPHD[i]
+                                                                .treatment
+                                                                .isEmpty
+                                                            ? label
+                                                            : "$label\n${allPHD[i].treatment}";
                                                   } else {
                                                     allPHD[i].treatment =
                                                         allPHD[i]
@@ -1814,127 +3553,247 @@
   Future<void> AddSelectpic() {
     return showModalBottomSheet<void>(
       context: context,
+      backgroundColor: Colors.transparent,
       builder: (BuildContext context) {
-        return Container(
-          height: 200,
-          width: double.infinity,
-          color: Colors.white,
-          child: Center(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: <Widget>[
-                const SizedBox(height: 20),
-                const Text(''
-                    'اختر مكان الصورة '),
-                ElevatedButton(
-                    onPressed: () async {
-                      String picName = "Patient_${numberFormat.format(widget.Patients.id)}_${numberFormat.format(int.parse(maxNoPic))}.jpg";
-                      await imageSelector(
-                          context,
-                          "camera",
-                          picName,
-                          widget.Patients.id);
-                      if (context.mounted) Navigator.pop(context);
-                    },
-                    child: const Text("الكاميرا")),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                    onPressed: () async {
-                      String picName = "Patient_${numberFormat.format(widget.Patients.id)}_${numberFormat.format(int.parse(maxNoPic))}.jpg";
-                      await imageSelector(
-                          context,
-                          "gallery",
-                          picName,
-                          widget.Patients.id);
-                      if (context.mounted) Navigator.pop(context);
-                    },
-                    child: const Text("استيديو الصور")),
-                const SizedBox(height: 20),
-              ],
-            ),
-          ),
+        // LayoutBuilder is required to bound the infinite-width constraints
+        // that Flutter's bottom sheet passes down before the layout is measured.
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            return Container(
+              width: constraints.maxWidth,
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 10,
+                    spreadRadius: 0,
+                  )
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  // Draggable indicator
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Center(
+                    child: Text(
+                      'اختر مصدر الصورة',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  Row(
+                    children: [
+                      // Camera is NOT supported on Windows desktop
+                      if (!Platform.isWindows) ...[
+                        Expanded(
+                          child: SizedBox(
+                            height: 56,
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                String picName =
+                                    "${(imageUrls.length + 1).toString().padLeft(4, '0')}-${widget.Patients.id}.jpg";
+                                await imageSelector(
+                                    context, "camera", picName, widget.Patients.id);
+                                if (context.mounted) Navigator.pop(context);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF1D9D99),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                elevation: 0,
+                              ),
+                              icon: const Icon(Icons.camera_alt_rounded, size: 24),
+                              label: const Text("الكاميرا",
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold, fontSize: 16)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                      ],
+                      Expanded(
+                        child: SizedBox(
+                          height: 56,
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              String picName =
+                                  "${(imageUrls.length + 1).toString().padLeft(4, '0')}-${widget.Patients.id}.jpg";
+                              await imageSelector(
+                                  context, "gallery", picName, widget.Patients.id);
+                              if (context.mounted) Navigator.pop(context);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1D9D99).withOpacity(0.1),
+                              foregroundColor: const Color(0xFF1D9D99),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              elevation: 0,
+                            ),
+                            icon: const Icon(Icons.photo_library_rounded, size: 24),
+                            label: const Text("استعراض الصور",
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 16)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            );
+          },
         );
       },
     );
   }
 
+
   Widget photoGallery() {
-    return Padding(
-      padding: const EdgeInsets.all(2.0),
-      child: SizedBox(
-        child: PhotoViewGallery.builder(
-          itemCount: imageUrls.length,
-          backgroundDecoration: const BoxDecoration(
-            color: Color(0xFF1D9D99),
-          ),
-          scrollDirection: Axis.horizontal,
-          //scrollPhysics: const BouncingScrollPhysics(),
-          builder: (context, index) {
-            listenForPermissionStatus();
-            return setPhoto(index, imageUrls[index]);
-          },
-        ),
+    return GridView.builder(
+      padding: const EdgeInsets.all(12),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
       ),
+      itemCount: imageUrls.length,
+      itemBuilder: (context, index) {
+        String fileName = imageUrls[index].split(RegExp(r'[\\/]')).last;
+        String validPath = p.join(extPicFolder, fileName);
+        File imageFileObj = File(validPath);
+
+        // Fallback for legacy images stored in the root /pic/ directory
+        if (!imageFileObj.existsSync()) {
+          final legacyPath = p.join(p.dirname(extPicFolder), fileName);
+          if (File(legacyPath).existsSync()) {
+            imageFileObj = File(legacyPath);
+          }
+        }
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            GestureDetector(
+              onTap: () {
+                showDialog(
+                  context: context,
+                  builder: (ctx) => Dialog(
+                    backgroundColor: Colors.transparent,
+                    insetPadding: const EdgeInsets.all(10),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        PhotoView(
+                          imageProvider: FileImage(imageFileObj),
+                          backgroundDecoration: const BoxDecoration(color: Colors.transparent),
+                        ),
+                        Positioned(
+                          top: 10,
+                          right: 10,
+                          child: IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(
+                  imageFileObj, 
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      color: Colors.grey[800],
+                      child: const Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.broken_image, color: Colors.white54, size: 40),
+                          SizedBox(height: 5),
+                          Text('مفقودة', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            Positioned(
+              top: 5,
+              right: 5,
+              child: GestureDetector(
+                onTap: () => DeletPic(index),
+                child: const CircleAvatar(
+                  radius: 12,
+                  backgroundColor: Colors.red,
+                  child: Icon(Icons.close, size: 16, color: Colors.white),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  PhotoViewGalleryPageOptions? photoViewGalleryPageOption;
-  PhotoViewGalleryPageOptions setPhoto(int index, String picPath) {
-    listenForPermissionStatus();
-    if (isPermmission || imageUrls.isNotEmpty) {
-      Image img = Image.file(File(picPath));
-      return PhotoViewGalleryPageOptions(
-        imageProvider: img.image,
-        initialScale: PhotoViewComputedScale.contained,
-        onScaleEnd: (context, details, controllerValue) {},
-        onTapDown: (context, details, controllerValue) {
-          DeletPic(index);
-        },
-        onTapUp: (context, details, controllerValue) {
-          DeletPic(index);
-        },
-      );
-    } else {
-      // print("put the icons");
-      return PhotoViewGalleryPageOptions(
-        imageProvider: const AssetImage('assets/icon/buildings.png'),
-        initialScale: PhotoViewComputedScale.contained,
-      );
-    }
-  }
-
   void DeletPic(int index) {
-    setState(() {
-      // print('object   Delte');
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        action: SnackBarAction(
-          textColor: Colors.white,
-          backgroundColor: Colors.pinkAccent,
-          label: ' هل تريد الحذف بالفعل ',
-          onPressed: () {
-            DbPicture dbPicture = DbPicture();
-            dbPicture.deletePicture(imageUrls[index]);
-            imageUrls.remove(imageUrls[index]);
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                ' تم حذف الصورة بنجاح ',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              duration: Duration(seconds: 2),
-            ));
-          },
-        ),
-        content: const Column(
-          children: [
-            Text(
-              'لم يتم حذف الصورة  ',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        duration: const Duration(seconds: 2),
-      ));
-    });
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("حذف الصورة", style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text("هل متأكد من رغبتك في حذف هذه الصورة؟", style: TextStyle(fontSize: 18)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("إلغاء"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              DbPicture dbPicture = DbPicture();
+              dbPicture.deletePicture(imageUrls[index]);
+              setState(() {
+                imageUrls.removeAt(index);
+              });
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text(
+                  'تم حذف الصورة بنجاح',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                duration: Duration(seconds: 2),
+              ));
+            },
+            child: const Text("حذف", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   bool isPermmission = false;
@@ -1988,16 +3847,20 @@
         break;
     }
     if (imageFile != null) {
-      if (!kIsWeb && Platform.isWindows) {
-        await imageFile!.saveTo('$extPicFolder/$picName');
-      } else if (!kIsWeb) {
-        PermissionStatus status2 =
-            await Permission.manageExternalStorage.request();
-        if (status2.isGranted) {
-          await imageFile!.saveTo('$extPicFolder/$picName');
-        } else {
-          await imageFile!.saveTo('$extPicFolder/$picName');
-        }
+      // Ensure the pic directory exists
+      final picDir = Directory(extPicFolder);
+      if (!await picDir.exists()) {
+        await picDir.create(recursive: true);
+      }
+      
+      String fullPath = p.join(extPicFolder, picName);
+      
+      try {
+        // Robust copy which avoids drive/volume boundary issues on Windows
+        await File(imageFile!.path).copy(fullPath);
+      } catch (e) {
+        // Fallback to saveTo if copy fails
+        await imageFile!.saveTo(fullPath);
       }
 
       /// find Max No of Picture
@@ -2005,9 +3868,8 @@
       dbPicture.lastPicture();
 
       /// add pic to Data Base
-      String fullPath = "$extPicFolder/$picName";
       dbPicture.addPicture(fullPath, projectId.toString());
-      
+
       setState(() {
         imageUrls.add(fullPath);
       });
@@ -2038,6 +3900,487 @@
       initialDate: projectStartDate,
       firstDate: DateTime(1930),
       lastDate: DateTime(2520),
+    );
+  }
+
+  Widget SixPage(BuildContext context) {
+    // --- Statistics ---
+    final now = DateTime.now();
+    final upcoming = _patientAppointments.where((a) {
+      try { return DateTime.parse(a.dateStart).isAfter(now); } catch (_) { return false; }
+    }).length;
+    final past = _patientAppointments.length - upcoming;
+
+    // --- Group by date ---
+    Map<String, List<DateModel>> grouped = {};
+    for (var appt in _patientAppointments) {
+      String dateKey = '';
+      try {
+        final dt = DateTime.parse(appt.dateStart);
+        dateKey = '${dt.year}/${dt.month.toString().padLeft(2,'0')}/${dt.day.toString().padLeft(2,'0')}';
+      } catch (_) {
+        dateKey = appt.dateStart;
+      }
+      grouped.putIfAbsent(dateKey, () => []).add(appt);
+    }
+    final sortedKeys = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+
+    return Column(
+      children: [
+        // --- Header ---
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: const BoxDecoration(
+             color: Color(0xFF167774),
+             borderRadius: BorderRadius.only(bottomLeft: Radius.circular(15), bottomRight: Radius.circular(15))
+          ),
+          child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.calendar_month, color: Colors.white),
+                  const SizedBox(width: 10),
+                  Text(
+                    "مواعيد: ${widget.Patients.name}",
+                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  await _updateSelectedPlansDate();
+                },
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text("موعد جديد", style: TextStyle(fontSize: 12)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF167774),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  elevation: 0,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // --- Stats Row ---
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _simpleStat("المجموع", _patientAppointments.length, Colors.blue),
+              _simpleStat("القادمة", upcoming, Colors.green),
+              _simpleStat("السابقة", past, Colors.orange),
+            ],
+          ),
+        ),
+
+        const Divider(height: 1),
+
+        // --- List ---
+        Expanded(
+          child: _patientAppointments.isEmpty
+              ? const Center(child: Text("لا توجد مواعيد مسجلة"))
+              : ListView.builder(
+                  padding: const EdgeInsets.only(top: 8, bottom: 20),
+                  itemCount: sortedKeys.length,
+                  itemBuilder: (context, gi) {
+                    final dateKey = sortedKeys[gi];
+                    final dayAppts = grouped[dateKey]!;
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Date Header
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                          child: Text(dateKey, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[700], fontSize: 14)),
+                        ),
+                        // Appointment Cards
+                        ...dayAppts.map((appt) {
+                          String startTime = "";
+                          String endTime = "";
+                          try {
+                            final s = DateTime.parse(appt.dateStart);
+                            final e = DateTime.parse(appt.dateEnd);
+                            startTime = "${s.hour.toString().padLeft(2,'0')}:${s.minute.toString().padLeft(2,'0')}";
+                            endTime = "${e.hour.toString().padLeft(2,'0')}:${e.minute.toString().padLeft(2,'0')}";
+                          } catch (_) {}
+
+                          return Card(
+                            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            elevation: 2,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      // Time Row
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.access_time, size: 18, color: Color(0xFF1D9D99)),
+                                          const SizedBox(width: 8),
+                                          Text("$startTime - $endTime", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1D9D99))),
+                                        ],
+                                      ),
+                                      // Delete Button
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_forever, color: Colors.red, size: 22),
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        onPressed: () async {
+                                          bool? confirm = await showDialog(
+                                            context: context,
+                                            builder: (ctx) => AlertDialog(
+                                              title: const Text("حذف الموعد"),
+                                              content: const Text("هل أنت متأكد من حذف هذا الموعد؟"),
+                                              actions: [
+                                                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("إلغاء")),
+                                                TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("حذف")),
+                                              ],
+                                            ),
+                                          );
+                                          if (confirm == true) {
+                                            await dbDate.deletedate(appt.id);
+                                            await _loadAppointments();
+                                          }
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                  const Divider(height: 16),
+                                  // Doctor & Room
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Row(
+                                          children: [
+                                            const Icon(Icons.person, size: 16, color: Colors.blueGrey),
+                                            const SizedBox(width: 6),
+                                            Text("د. ${appt.doctorName}", style: const TextStyle(fontSize: 14)),
+                                          ],
+                                        ),
+                                      ),
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.room, size: 16, color: Colors.blueGrey),
+                                          const SizedBox(width: 6),
+                                          Text(appt.place, style: const TextStyle(fontSize: 14)),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                  // Notes
+                                  if (appt.note.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Icon(Icons.note_alt, size: 16, color: Colors.orange),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            appt.note,
+                                            style: TextStyle(fontSize: 13, color: Colors.grey[600], fontStyle: FontStyle.italic),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          );
+                        }),
+                      ],
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _simpleStat(String label, int value, Color color) {
+    return Column(
+      children: [
+        Text(value.toString(), style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
+        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      ],
+    );
+  }
+
+  Widget SevenPage(BuildContext context) {
+    return Container(
+      color: Colors.white,
+      child: Column(
+        children: [
+          // Header Summary
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blueGrey[50],
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(20),
+                bottomRight: Radius.circular(20),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildSummaryItem(
+                    "إجمالي الفواتير", _totalInvoices, Colors.red),
+                _buildSummaryItem(
+                    "إجمالي الواصل", _totalReceipts, Colors.green),
+                _buildSummaryItem(
+                    "المبلغ المتبقي", _remainingBalance, Colors.blue),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _unifiedFinancialRecords.isEmpty
+                ? const Center(child: Text("لا توجد سجلات مالية"))
+                : ListView.builder(
+                    itemCount: _unifiedFinancialRecords.length,
+                    itemBuilder: (context, index) {
+                      final record = _unifiedFinancialRecords[index];
+                      if (record is InvoiceModel) {
+                        return _buildInvoiceCard(context, record);
+                      } else if (record is accModel.InvoicesModel) {
+                        return _buildAccountingInvoiceCard(context, record);
+                      } else if (record is VoucherModel) {
+                        return _buildVoucherCard(context, record);
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInvoiceCard(BuildContext context, InvoiceModel inv) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      elevation: 2,
+      child: ListTile(
+        leading: const CircleAvatar(
+          backgroundColor: Colors.blue,
+          child: Icon(Icons.receipt, color: Colors.white),
+        ),
+        title: Text("${inv.treatmentName} (السن ${inv.toothNumber})",
+            style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle:
+            Text("فاتورة علاج | التاريخ: ${inv.invoiceDate.split(' ')[0]}"),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  "${inv.treatmentCost} ₪",
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: Colors.blue),
+                ),
+                if (inv.isPaid)
+                  const Text("مدفوع",
+                      style: TextStyle(
+                          color: Colors.green,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold))
+                else
+                  const Text("غير مدفوع",
+                      style: TextStyle(
+                          color: Colors.red,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: const Icon(Icons.print, color: Colors.blue),
+              onPressed: () async {
+                // To print a clinical invoice, we fetch the corresponding accounting invoice
+                try {
+                  final accInvoices = await acc.DbInvoices()
+                      .getInvoicesByAccount(widget.Patients.id.toString());
+                  accModel.InvoicesModel? matching;
+                  for (var a in accInvoices) {
+                    if (a.id == inv.invoiceId) {
+                      matching = a;
+                      break;
+                    }
+                  }
+                  if (matching != null) {
+                    reportSalesInvoicePDF.fromInvoice(matching).inti();
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content:
+                            Text("لم يتم العثور على فاتورة محاسبية مرتبطة")));
+                  }
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("خطأ في الطباعة: $e")));
+                }
+              },
+            ),
+          ],
+        ),
+        onTap: () async {
+          VMSalesInvoice = ViewModelSalesInvoices.impty();
+          VMSalesInvoice.EditeMode = true;
+          VMSalesInvoice.EditeAlreadyInvoices(inv.invoiceId.toString());
+          Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const SalesInvoices()))
+              .then((_) => _loadInvoices());
+        },
+      ),
+    );
+  }
+
+  Widget _buildVoucherCard(BuildContext context, VoucherModel v) {
+    bool isReceipt = v.className == 'قبض';
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      elevation: 2,
+      child: ListTile(
+        onTap: () {
+          Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => ReceiptVoucherPage(
+                        type: v.className,
+                        voucher: v,
+                        isEdit: true,
+                      ))).then((_) => _loadVouchers());
+        },
+        leading: CircleAvatar(
+          backgroundColor: isReceipt ? Colors.green : Colors.orange,
+          child: Icon(isReceipt ? Icons.add_card : Icons.payment,
+              color: Colors.white),
+        ),
+        title: Text(isReceipt ? "إيصال قبض" : "سند صرف",
+            style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text("${v.discription} | التاريخ: ${v.date}"),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              "${v.payment} ${v.currency}",
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: isReceipt ? Colors.green : Colors.orange,
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: const Icon(Icons.print),
+              color: isReceipt ? Colors.green : Colors.orange,
+              onPressed: () async {
+                reportVoucherPDF(v).inti();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAccountingInvoiceCard(
+      BuildContext context, accModel.InvoicesModel inv) {
+    bool isSales = inv.type == 'المبيعات' || inv.type == 'مبيعات';
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      elevation: 2,
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: isSales ? Colors.indigo : Colors.brown,
+          child: Icon(isSales ? Icons.shopping_bag : Icons.shopping_cart,
+              color: Colors.white),
+        ),
+        title: Text(
+            isSales
+                ? "فاتورة مبيعات رقم ${inv.id.toString().padLeft(6, '0')}"
+                : "فاتورة مشتريات رقم ${inv.id.toString().padLeft(6, '0')}",
+            style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text(
+            "${inv.discription.isNotEmpty ? inv.discription : 'بدون وصف'} | التاريخ: ${inv.date}"),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  "${inv.amount_all} ${inv.currency}",
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: isSales ? Colors.indigo : Colors.brown),
+                ),
+                Text(
+                  inv.remaining == '0'
+                      ? "مدفوعة بالكامل"
+                      : "متبقي: ${inv.remaining}",
+                  style: TextStyle(
+                      color: inv.remaining == '0' ? Colors.green : Colors.red,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: const Icon(Icons.print, color: Colors.indigo),
+              onPressed: () async {
+                reportSalesInvoicePDF.fromInvoice(inv).inti();
+              },
+            ),
+          ],
+        ),
+        onTap: () async {
+          VMSalesInvoice = ViewModelSalesInvoices.impty();
+          VMSalesInvoice.EditeMode = true;
+          await VMSalesInvoice.EditeAlreadyInvoices(inv.id.toString());
+          if (!context.mounted) return;
+          Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const SalesInvoices()))
+              .then((_) => _loadVouchers());
+        },
+      ),
+    );
+  }
+
+  Widget _buildSummaryItem(String label, double value, Color color) {
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        Text(
+          "${value.toStringAsFixed(2)} ₪",
+          style: TextStyle(
+              fontSize: 18, fontWeight: FontWeight.bold, color: color),
+        ),
+      ],
     );
   }
 }

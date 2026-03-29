@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hussam_clinc/datasource/expenseReview_datasource.dart';
+import 'package:hussam_clinc/View_model/ViewModelExpenseInvoices.dart';
 import 'package:hussam_clinc/pages/accounting/invoices/expenseInvoices.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
@@ -22,8 +23,9 @@ class ExpenseInvoicesReview extends StatefulWidget {
 }
 
 class ExpenseInvoicesReviewState extends State<ExpenseInvoicesReview> {
-  late ExpenseReviewDataSource expenseReviewData;
+  ExpenseReviewDataSource expenseReviewData = ExpenseReviewDataSource(expenseinvoicesData: []);
   final DataGridController _dataGridController = DataGridController();
+  String? _lastTappedId; // لتتبع الضغطة الأولى والثانية
 
   @override
   void initState() {
@@ -59,10 +61,13 @@ class ExpenseInvoicesReviewState extends State<ExpenseInvoicesReview> {
       }
     }
 
-    setState(() {
-      //AllInvioces();
-      expenseReviewData = ExpenseReviewDataSource(
-          expenseinvoicesData: expenseInvoices, onDelete: handleDelete);
+    ExpenseInvioces().then((_) {
+      if (mounted) {
+        setState(() {
+          expenseReviewData = ExpenseReviewDataSource(
+              expenseinvoicesData: expenseInvoices, onDelete: handleDelete);
+        });
+      }
     });
   }
 
@@ -77,6 +82,48 @@ class ExpenseInvoicesReviewState extends State<ExpenseInvoicesReview> {
             'فواتير المشتريات',
             style: TextStyle(fontSize: 25, color: Colors.white),
           ),
+          actions: [
+            // زر فاتورة جديدة
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: Tooltip(
+                message: 'إنشاء فاتورة جديدة',
+                child: IconButton(
+                  icon:
+                      const Icon(Icons.add_circle_outline, color: Colors.white),
+                  onPressed: () async {
+                    // تحضير بيانات الفاتورة الجديدة
+                    AllEmplyess();
+                    await AllSuppliersTreeList();
+                    VMGlobal.MaxNoS();
+
+                    // إنشاء فاتورة جديدة فارغة
+                    VMExpenseInvoice = ViewModelExpenseInvoices.impty();
+                    VMExpenseInvoice.EditeMode = false;
+                    VMExpenseInvoice.checkValues();
+                    VMExpenseInvoice.checkValues2();
+
+                    if (mounted) {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (context) => const ExpenseInvoices()),
+                      );
+                      // تحديث البيانات بعد العودة
+                      ExpenseInvioces().then((_) {
+                        if (mounted) {
+                          setState(() {
+                            // إعادة تهيئة الداتا سورس لتحديث القائمة
+                            expenseReviewData = ExpenseReviewDataSource(
+                                expenseinvoicesData: expenseInvoices);
+                          });
+                        }
+                      });
+                    }
+                  },
+                ),
+              ),
+            ),
+          ],
         ),
         body: SfDataGridTheme(
           data: SfDataGridThemeData(headerColor: const Color(0xff009889)),
@@ -97,22 +144,32 @@ class ExpenseInvoicesReviewState extends State<ExpenseInvoicesReview> {
       rowsPerPage: 30,
       editingGestureType: EditingGestureType.tap,
       controller: _dataGridController,
-      onCellTap: (DataGridCellTapDetails details) {
+      onCellTap: (DataGridCellTapDetails details) async {
         final rowIdx = details.rowColumnIndex.rowIndex;
         if (rowIdx < 1) return;
         final row = expenseReviewData.effectiveRows[rowIdx - 1];
-        setState(() {
-          String s = row.getCells()[0].value.toString();
-          VMExpenseInvoice.EditeAlreadyInvoices(s);
+        String s = row.getCells()[0].value.toString();
+        String sm = row.getCells()[5].value.toString();
+
+        // الضغطة الأولى: تحميل البيانات وانتظار اكتمالها
+        if (_lastTappedId != s) {
+          setState(() {
+            _lastTappedId = s;
+          });
+          // انتظر حتى تكتمل عملية تحميل الأصناف من قاعدة البيانات
+          await VMExpenseInvoice.EditeAlreadyInvoices(s);
           VMExpenseInvoice.MaxInvoices = s;
-          String sm = row.getCells()[5].value.toString();
           VMExpenseInvoice.Maxjournals = sm;
           AllEmplyess();
-        });
-        Future.delayed(const Duration(seconds: 1)).then((value) {
+          return;
+        }
+
+        // الضغطة الثانية: فتح الفاتورة والانتقال للتعديل
+        if (_lastTappedId == s && mounted) {
           Navigator.of(context).push(
               MaterialPageRoute(builder: (context) => const ExpenseInvoices()));
-        });
+          _lastTappedId = null;
+        }
       },
       allowSorting: true,
       source: expenseReviewData,

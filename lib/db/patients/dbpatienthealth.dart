@@ -20,6 +20,16 @@ class DbPatientHealth {
     return queryResult.map((e) => PatienHealthtModel.fromMap(e)).toList();
   }
 
+  Future<PatienHealthtModel?> getPatientHealth(String patientId) async {
+    if (kIsWeb) {
+      final doc = await FirebaseFirestore.instance.collection('patient_health').doc(patientId).get();
+      return doc.exists ? PatienHealthtModel.fromMap(doc.data()!) : null;
+    }
+    Database? db = await dbHelper.openDb();
+    final results = await db!.query('patient_health', where: 'PH_patientId = ?', whereArgs: [patientId]);
+    return results.isNotEmpty ? PatienHealthtModel.fromMap(results.first) : null;
+  }
+
   Future<List<Map<String, Object?>>> searchPatientById(int id) async {
     Database? db = await dbHelper.openDb();
     String sql =

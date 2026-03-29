@@ -23,6 +23,22 @@ class DbDate {
     return queryResult.map((e) => DateModel.fromMap(e)).toList();
   }
 
+  Future<List<DateModel>> getDatesByPatient(String patientId) async {
+    if (kIsWeb) {
+      final snap = await FirebaseFirestore.instance
+          .collection('dates')
+          .where('date_costumerId', isEqualTo: patientId)
+          .get();
+      return snap.docs.map((doc) => DateModel.fromMap(doc.data())).toList();
+    }
+    Database? db = await dbHelper.openDb();
+    final List<Map<String, Object?>> results = await db!.query('dates',
+        where: 'date_costumerId = ?',
+        whereArgs: [patientId],
+        orderBy: 'date_id ASC');
+    return results.map((e) => DateModel.fromMap(e)).toList();
+  }
+
   Future<DateModel> lastDate() async {
     if (kIsWeb) {
       final snap = await FirebaseFirestore.instance
@@ -59,15 +75,13 @@ class DbDate {
 
   Future<List<DateModel>> GroupDates() async {
     if (kIsWeb) {
-      // Mock or handle Firestore collection if group_date exists there
-      return [];
+      return await alldate();
     }
     Database? db = await dbHelper.openDb();
     String sql = 'SELECT * from group_date';
     final List<Map<String, Object?>> queryResult = await db!.rawQuery(sql);
     return queryResult.map((e) => DateModel.fromMap(e)).toList();
   }
-
 
   Future<void> deletedate(int id) async {
     if (kIsWeb) {
@@ -104,8 +118,6 @@ class DbDate {
     String dateCostumerid,
     String dateCostumername,
   ) async {
-    // Generate temporary ID if needed or let DB handle it.
-    // To sync, we usually need an ID.
     final row = {
       'date_kind': dateKind,
       'date_place': datePlace,
@@ -119,7 +131,6 @@ class DbDate {
     };
 
     if (kIsWeb) {
-      // For web, use a timestamp-based ID or similar if not provided
       final id = DateTime.now().millisecondsSinceEpoch;
       final model = DateModel.full(
         id: id,

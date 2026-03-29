@@ -66,16 +66,21 @@ class InvoicesDetailModel {
 
 
 
-  Map<String, dynamic> toMap() => {
-  "ID_id": _id,
-  "ID_invoices_id": _invoices_id, // 'رقم الفاتورة'
-  "ID_item_no":_item_no,   //'رقم الصنف'
-  "ID_item_name":_item_name,//'اسم الصنف'
-  "ID_unit_name": _unit_name ,//'الوحدة'
-  "ID_unit_qty":_unit_qty ,// 'الكمية'
-  "ID_unit_price":_unit_price,//'سعر الوحدة'
-  "ID_net_price":_net_price ,//'الإجمالي'
-  };
+  Map<String, dynamic> toMap() {
+    final Map<String, dynamic> map = {
+      "ID_invoices_id": _invoices_id,
+      "ID_item_no": _item_no,
+      "ID_item_name": _item_name,
+      "ID_unit_name": _unit_name,
+      "ID_unit_qty": _unit_qty,
+      "ID_unit_price": _unit_price,
+      "ID_net_price": _net_price,
+    };
+    if (_id != 0) {
+      map["ID_id"] = _id;
+    }
+    return map;
+  }
 
   int get id => _id;
 

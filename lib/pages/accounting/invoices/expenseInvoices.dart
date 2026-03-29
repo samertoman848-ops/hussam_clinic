@@ -22,21 +22,31 @@ class ExpenseInvoices extends StatefulWidget {
 var VMExpenseInvoice = ViewModelExpenseInvoices.impty();
 
 class ExpenseInvoicesState extends State<ExpenseInvoices> {
+  // حفظ الصفوف في متغير State ثابت لمنع إعادة بنائها عند كل setState
+  late List<PlutoRow> _frozenRows;
+
   @override
   void dispose() {
     super.dispose();
-
     VMExpenseInvoice.saving = false;
+    VMExpenseInvoice.EditeMode = false;
   }
 
   @override
   void initState() {
     super.initState();
-    if (VMExpenseInvoice.saving == false) {
+    if (VMExpenseInvoice.EditeMode) {
+      // وضع التعديل: لا تُعد الإنشاء ولا تُمسح البيانات، حدّث القوائم فقط
+      VMExpenseInvoice.checkValues2();
+    } else {
+      // فاتورة جديدة: أعد الإنشاء وامسح كل شيء
       VMExpenseInvoice = ViewModelExpenseInvoices.impty();
+      VMExpenseInvoice.checkValues();
+      VMExpenseInvoice.checkValues2();
     }
-    VMExpenseInvoice.checkValues();
-    VMExpenseInvoice.checkValues2();
+    // تجميد نسخة من الصفوف عند الفتح
+    _frozenRows = List<PlutoRow>.from(VMExpenseInvoice.rows);
+    print('✅ ExpenseInvoices initState: EditeMode=${VMExpenseInvoice.EditeMode}, rows=${_frozenRows.length}');
   }
 
   @override
@@ -111,6 +121,7 @@ class ExpenseInvoicesState extends State<ExpenseInvoices> {
         onPressed: () {
           setState(() {
             VMExpenseInvoice.stateManager.removeCurrentRow();
+            VMExpenseInvoice.calculateTotals();
           });
         },
       ),
@@ -150,23 +161,24 @@ class ExpenseInvoicesState extends State<ExpenseInvoices> {
         _showConfirmDialog(
           title: 'تعديل فاتورة الشراء',
           message: 'هل أنت متأكد من حفظ التعديلات؟',
-          onConfirm: () {
-            VMExpenseInvoice.EditeInvoices(VMExpenseInvoice.MaxInvoices);
+          onConfirm: () async {
+            await VMExpenseInvoice.EditeInvoices(VMExpenseInvoice.MaxInvoices);
             _showSuccessSnackBar('تم تعديل الفاتورة بنجاح');
             AllPatientList();
             copyExternalDB();
+            if (context.mounted) Navigator.of(context).pop();
           },
         );
       } else {
         _showConfirmDialog(
           title: 'إضافة فاتورة شراء',
           message: 'هل تريد حفظ الفاتورة الجديدة؟',
-          onConfirm: () {
-            VMExpenseInvoice.AddNewInvoices();
+          onConfirm: () async {
+            await VMExpenseInvoice.AddNewInvoices();
             _showSuccessSnackBar('تم إضافة الفاتورة بنجاح');
-            AllPatientList();
             copyExternalDB();
             setState(() => VMExpenseInvoice.saving = true);
+            if (context.mounted) Navigator.of(context).pop();
           },
         );
       }
@@ -223,7 +235,7 @@ class ExpenseInvoicesState extends State<ExpenseInvoices> {
             _buildInfoItem(
               icon: Icons.confirmation_number_outlined,
               label: 'رقم الفاتورة',
-              value: VMExpenseInvoice.Maxjournals,
+              value: VMExpenseInvoice.Maxjournals.padLeft(6, '0'),
             ),
             const SizedBox(width: 16),
             _buildInteractiveItem(
@@ -479,12 +491,64 @@ class ExpenseInvoicesState extends State<ExpenseInvoices> {
   }
 
   PlutoGrid tabledata() {
+    final localColumns = List<PlutoColumn>.from(VMExpenseInvoice.columns);
+    localColumns.add(
+      PlutoColumn(
+        title: 'حذف',
+        field: 'delete',
+        width: 80,
+        type: PlutoColumnType.text(),
+        enableSorting: false,
+        renderer: (rendererContext) {
+          return IconButton(
+            icon: const Icon(Icons.delete, color: Colors.red),
+            tooltip: 'حذف السطر',
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('حذف السطر',
+                      style: TextStyle(color: Colors.red)),
+                  content: const Text('هل أنت متأكد من حذف هذا السطر؟'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('إلغاء')),
+                    ElevatedButton(
+                      style:
+                          ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        setState(() {
+                          try {
+                            VMExpenseInvoice.stateManager
+                                .removeRows([rendererContext.row]);
+                          } catch (e) {}
+                          VMExpenseInvoice.calculateTotals();
+                        });
+                      },
+                      child: const Text('تأكيد'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+
     return PlutoGrid(
-      columns: VMExpenseInvoice.columns,
-      rows: VMExpenseInvoice.rows,
+      columns: localColumns,
+      rows: _frozenRows,
       onLoaded: (event) {
         VMExpenseInvoice.stateManager = event.stateManager;
         VMExpenseInvoice.stateManager.setShowColumnFilter(false);
+        if (mounted) {
+          setState(() {
+            VMExpenseInvoice.calculateTotals();
+          });
+        }
       },
       rowColorCallback: (PlutoRowColorContext rowColorContext) {
         return rowColorContext.row.cells['id']?.value == '0'
@@ -525,15 +589,14 @@ class ExpenseInvoicesState extends State<ExpenseInvoices> {
           currentRow.cells['total']!.value =
               currentRow.cells['price']!.value * currentRow.cells['qty']!.value;
         }
-        VMExpenseInvoice.amount = 0;
-        for (var e in VMExpenseInvoice.stateManager.rows) {
-          VMExpenseInvoice.amount += e.cells['total']!.value;
-        }
-        setState(() {
-          VMExpenseInvoice.amount_all =
-              VMExpenseInvoice.amount - VMExpenseInvoice.disscount;
-          VMExpenseInvoice.remaining = VMExpenseInvoice.amount_all -
-              (VMExpenseInvoice.payment + VMExpenseInvoice.payment_app);
+
+        // Use addPostFrameCallback to avoid "setState() called when widget tree was locked"
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              VMExpenseInvoice.calculateTotals();
+            });
+          }
         });
       },
       configuration: const PlutoGridConfiguration(
@@ -574,20 +637,14 @@ class ExpenseInvoicesState extends State<ExpenseInvoices> {
                 _buildSummaryInput('الخصم', VMExpenseInvoice.disscount, (val) {
                   setState(() {
                     VMExpenseInvoice.disscount = double.tryParse(val) ?? 0.0;
-                    VMExpenseInvoice.amount_all =
-                        VMExpenseInvoice.amount - VMExpenseInvoice.disscount;
-                    VMExpenseInvoice.remaining = VMExpenseInvoice.amount_all -
-                        (VMExpenseInvoice.payment +
-                            VMExpenseInvoice.payment_app);
+                    VMExpenseInvoice.calculateTotals();
                   });
                 }),
                 const SizedBox(width: 12),
                 _buildSummaryInput('دفع كاش', VMExpenseInvoice.payment, (val) {
                   setState(() {
                     VMExpenseInvoice.payment = double.tryParse(val) ?? 0.0;
-                    VMExpenseInvoice.remaining = VMExpenseInvoice.amount_all -
-                        (VMExpenseInvoice.payment +
-                            VMExpenseInvoice.payment_app);
+                    VMExpenseInvoice.calculateTotals();
                   });
                 }),
                 const SizedBox(width: 12),
@@ -595,9 +652,7 @@ class ExpenseInvoicesState extends State<ExpenseInvoices> {
                     (val) {
                   setState(() {
                     VMExpenseInvoice.payment_app = double.tryParse(val) ?? 0.0;
-                    VMExpenseInvoice.remaining = VMExpenseInvoice.amount_all -
-                        (VMExpenseInvoice.payment +
-                            VMExpenseInvoice.payment_app);
+                    VMExpenseInvoice.calculateTotals();
                   });
                 }),
                 _buildPaymentCurrencyDropdown(),

@@ -21,6 +21,9 @@ import 'package:hussam_clinc/model/DatesModel.dart';
 import 'package:hussam_clinc/model/Employment/EmployeeModel.dart';
 import 'package:hussam_clinc/model/RoomModel.dart';
 import 'package:hussam_clinc/firebase_options.dart';
+import 'package:hussam_clinc/services/ClinicService.dart';
+import 'package:hussam_clinc/db/dbhelper.dart';
+import 'package:hussam_clinc/global_var/globals.dart';
 
 class FirebaseSyncService {
   FirebaseSyncService._();
@@ -62,7 +65,7 @@ class FirebaseSyncService {
   }
 
   /// Generic sync method for any collection
-  Future<void> syncData(String collection, String id, Map<String, dynamic> data) async {
+  Future<void> syncData(String collection, String id, Map<String, dynamic> data, {String? clinicId}) async {
     if (!_enabled) return;
 
     try {
@@ -70,12 +73,21 @@ class FirebaseSyncService {
       data['updatedAt'] = FieldValue.serverTimestamp();
       data['updatedAtMs'] = DateTime.now().millisecondsSinceEpoch;
 
-      await FirebaseFirestore.instance
-          .collection(collection)
-          .doc(id)
-          .set(data, SetOptions(merge: true));
-      
-      debugPrint('Data synced to Firestore: $collection/$id');
+      DocumentReference docRef;
+      if (clinicId != null) {
+        docRef = FirebaseFirestore.instance
+            .collection('clinics')
+            .doc(clinicId)
+            .collection(collection)
+            .doc(id);
+      } else {
+        docRef = FirebaseFirestore.instance
+            .collection(collection)
+            .doc(id);
+      }
+
+      await docRef.set(data, SetOptions(merge: true));
+      // debugPrint('Data synced to Firestore: ${docRef.path}');
     } catch (e) {
       debugPrint('syncData error ($collection): $e');
     }
@@ -84,142 +96,188 @@ class FirebaseSyncService {
   /// Handles the user's request for patients:
   /// Web -> Direct Firestore
   /// Desktop -> Push to Firestore (after local save)
-  Future<void> syncPatient(PatientModel patient) async {
-    await syncData('patients', patient.id.toString(), _toFirestoreMap(patient));
+  Future<void> syncPatient(PatientModel patient, {String? clinicId}) async {
+    await syncData('patients', patient.id.toString(), _toFirestoreMap(patient), clinicId: clinicId);
   }
 
-  Future<void> pushPatient(PatientModel patient) async {
-    await syncPatient(patient);
+  Future<void> pushPatient(PatientModel patient, {String? clinicId}) async {
+    await syncPatient(patient, clinicId: clinicId);
   }
 
-  Future<void> syncPatientHealth(PatienHealthtModel health) async {
-    await syncData('patient_health', health.patientId, health.toMap());
+  Future<void> syncPatientHealth(PatienHealthtModel health, {String? clinicId}) async {
+    await syncData('patient_health', health.patientId, health.toMap(), clinicId: clinicId);
   }
 
-  Future<void> pushPatientHealth(PatienHealthtModel health) async {
-    await syncPatientHealth(health);
+  Future<void> pushPatientHealth(PatienHealthtModel health, {String? clinicId}) async {
+    await syncPatientHealth(health, clinicId: clinicId);
   }
 
-  Future<void> syncInvoice(InvoicesModel invoice) async {
-    await syncData('invoices', invoice.id.toString(), invoice.toMap());
+  Future<void> syncInvoice(InvoicesModel invoice, {String? clinicId}) async {
+    await syncData('invoices', invoice.id.toString(), invoice.toMap(), clinicId: clinicId);
   }
 
-  Future<void> pushInvoice(InvoicesModel invoice) async {
-    await syncInvoice(invoice);
+  Future<void> pushInvoice(InvoicesModel invoice, {String? clinicId}) async {
+    await syncInvoice(invoice, clinicId: clinicId);
   }
 
-  Future<void> syncInvoiceDetail(InvoicesDetailModel detail) async {
+  Future<void> syncInvoiceDetail(InvoicesDetailModel detail, {String? clinicId}) async {
     // Nested collection for invoice details
-    await syncData('invoices/${detail.invoices_id}/details', detail.id.toString(), detail.toMap());
+    final path = 'invoices/${detail.invoices_id}/details';
+    await syncData(path, detail.id.toString(), detail.toMap(), clinicId: clinicId);
   }
 
-  Future<void> pushInvoiceDetail(InvoicesDetailModel detail) async {
-    await syncInvoiceDetail(detail);
+  Future<void> pushInvoiceDetail(InvoicesDetailModel detail, {String? clinicId}) async {
+    await syncInvoiceDetail(detail, clinicId: clinicId);
   }
 
-  Future<void> syncTreatmentPlan(TreatmentPlanModel plan) async {
-    await syncData('treatment_plans', plan.id.toString(), plan.toMap());
+  Future<void> syncTreatmentPlan(TreatmentPlanModel plan, {String? clinicId}) async {
+    await syncData('treatment_plans', plan.id.toString(), plan.toMap(), clinicId: clinicId);
   }
 
-  Future<void> pushTreatmentPlan(TreatmentPlanModel plan) async {
-    await syncTreatmentPlan(plan);
+  Future<void> pushTreatmentPlan(TreatmentPlanModel plan, {String? clinicId}) async {
+    await syncTreatmentPlan(plan, clinicId: clinicId);
   }
 
-  Future<void> syncDate(DateModel date) async {
-    await syncData('dates', date.id.toString(), date.toMap());
+  Future<void> syncDate(DateModel date, {String? clinicId}) async {
+    await syncData('dates', date.id.toString(), date.toMap(), clinicId: clinicId);
   }
 
-  Future<void> pushDate(DateModel date) async {
-    await syncDate(date);
+  Future<void> pushDate(DateModel date, {String? clinicId}) async {
+    await syncDate(date, clinicId: clinicId);
   }
 
-  Future<void> syncEmployee(EmployeeModel emp) async {
-    await syncData('employees', emp.id.toString(), emp.toMap());
+  Future<void> syncEmployee(EmployeeModel emp, {String? clinicId}) async {
+    await syncData('employees', emp.id.toString(), emp.toMap(), clinicId: clinicId);
   }
 
-  Future<void> pushEmployee(EmployeeModel emp) async {
-    await syncEmployee(emp);
+  Future<void> pushEmployee(EmployeeModel emp, {String? clinicId}) async {
+    await syncEmployee(emp, clinicId: clinicId);
   }
 
-  Future<void> syncRoom(RoomModel room) async {
-    await syncData('rooms', room.id.toString(), room.toMap());
+  Future<void> syncRoom(RoomModel room, {String? clinicId}) async {
+    await syncData('rooms', room.id.toString(), room.toMap(), clinicId: clinicId);
   }
 
-  Future<void> pushRoom(RoomModel room) async {
-    await syncRoom(room);
+  Future<void> pushRoom(RoomModel room, {String? clinicId}) async {
+    await syncRoom(room, clinicId: clinicId);
   }
 
-  /// Migrates all local data to Firebase Cloud.
-  /// This should be run on a Desktop/Mobile device that contains the local SQLite data.
-  Future<void> uploadAllDataToFirebase() async {
+  /// Migrates all data from all clinics to Firebase.
+  Future<void> syncAllClinicsToFirebase() async {
     if (!_enabled) {
       await initialize();
       if (!_enabled) return;
     }
 
-    debugPrint('Starting full data migration to Firebase...');
+    final originalDbName = selectedDbName;
+    debugPrint('Starting MULTI-CLINIC sync to Firebase...');
 
+    try {
+      final clinicService = ClinicService();
+      await clinicService.loadClinics();
+      final allClinics = clinicService.clinics;
+
+      for (final clinic in allClinics) {
+        final clinicId = clinic.name.toLowerCase().replaceAll(' ', '_');
+        debugPrint('--- Syncing Clinic: ${clinic.name} ($clinicId) ---');
+
+        // 1. Switch to this clinic via DbHelper (without affecting StorageService if possible, 
+        // but here we use the safe way by closing and reopening)
+        await DbHelper().closeDB();
+        selectedDbName = clinic.dbFileName;
+        await DbHelper().openDb();
+
+        // 2. Upload Metadata for this clinic
+        await FirebaseFirestore.instance.collection('clinics').doc(clinicId).set({
+          'name': clinic.name,
+          'dbFileName': clinic.dbFileName,
+          'lastSyncAt': FieldValue.serverTimestamp(),
+          'updatedAtMs': DateTime.now().millisecondsSinceEpoch,
+        }, SetOptions(merge: true));
+
+        // 3. Upload all tables for THIS clinic
+        await _uploadCurrentDatabaseToFirebase(clinicId);
+      }
+
+      debugPrint('✅ Multi-clinic sync completed successfully!');
+    } catch (e) {
+      debugPrint('❌ Multi-clinic sync error: $e');
+    } finally {
+      // Revert to original database
+      if (selectedDbName != originalDbName) {
+        await DbHelper().closeDB();
+        selectedDbName = originalDbName;
+        await DbHelper().openDb();
+      }
+    }
+  }
+
+  Future<void> _uploadCurrentDatabaseToFirebase(String clinicId) async {
     try {
       // 1. Patients
       final patients = await DbPatient().allPatients();
       for (final p in patients) {
-        await pushPatient(p);
+        await pushPatient(p, clinicId: clinicId);
       }
-      debugPrint('Synced ${patients.length} patients.');
+      debugPrint('[$clinicId] Synced ${patients.length} patients.');
 
       // 2. Patient Health
       final healthRecords = await DbPatientHealth().allPHs();
       for (final h in healthRecords) {
-        await pushPatientHealth(h);
+        await pushPatientHealth(h, clinicId: clinicId);
       }
-      debugPrint('Synced ${healthRecords.length} health records.');
+      debugPrint('[$clinicId] Synced ${healthRecords.length} health records.');
 
       // 3. Invoices
       final invoices = await DbInvoices().getAllInvoices();
       for (final inv in invoices) {
-        await pushInvoice(inv);
+        await pushInvoice(inv, clinicId: clinicId);
       }
-      debugPrint('Synced ${invoices.length} invoices.');
+      debugPrint('[$clinicId] Synced ${invoices.length} invoices.');
 
       // 4. Invoice Details
       final details = await DbInvoicesDetails().getAllInvoicesDetails();
       for (final d in details) {
-        await pushInvoiceDetail(d);
+        await pushInvoiceDetail(d, clinicId: clinicId);
       }
-      debugPrint('Synced ${details.length} invoice details.');
+      debugPrint('[$clinicId] Synced ${details.length} invoice details.');
 
       // 5. Treatment Plans
       final plans = await DbTreatmentPlans().getAllTreatmentPlans();
       for (final plan in plans) {
-        await pushTreatmentPlan(plan);
+        await pushTreatmentPlan(plan, clinicId: clinicId);
       }
-      debugPrint('Synced ${plans.length} treatment plans.');
+      debugPrint('[$clinicId] Synced ${plans.length} treatment plans.');
 
       // 6. Dates (Appointments)
       final dates = await DbDate().alldate();
       for (final date in dates) {
-        await pushDate(date);
+        await pushDate(date, clinicId: clinicId);
       }
-      debugPrint('Synced ${dates.length} appointments.');
+      debugPrint('[$clinicId] Synced ${dates.length} appointments.');
 
       // 7. Employees
       final emps = await DbEmployee().allEmployeesModel();
       for (final emp in emps) {
-        await pushEmployee(emp);
+        await pushEmployee(emp, clinicId: clinicId);
       }
-      debugPrint('Synced ${emps.length} employees.');
+      debugPrint('[$clinicId] Synced ${emps.length} employees.');
 
       // 8. Rooms
       final rooms = await DbRooms().allRooms();
       for (final room in rooms) {
-        await pushRoom(room);
+        await pushRoom(room, clinicId: clinicId);
       }
-      debugPrint('Synced ${rooms.length} rooms.');
-
-      debugPrint('Full migration completed successfully!');
+      debugPrint('[$clinicId] Synced ${rooms.length} rooms.');
     } catch (e) {
-      debugPrint('Migration error: $e');
+      debugPrint('Error syncing database $clinicId: $e');
     }
+  }
+
+  /// Migrates all local data to Firebase Cloud.
+  /// (Deprecated/Legacy: Use syncAllClinicsToFirebase instead)
+  Future<void> uploadAllDataToFirebase() async {
+    await syncAllClinicsToFirebase();
   }
 
   Future<void> pullPatientsToLocal({Duration cooldown = const Duration(seconds: 45)}) async {

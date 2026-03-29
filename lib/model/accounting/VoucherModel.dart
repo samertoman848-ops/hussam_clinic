@@ -32,43 +32,48 @@ class VoucherModel {
   PRIMARY KEY("voucher_id" AUTOINCREMENT)*/
 
   VoucherModel(dynamic obj) {
-    _id = obj["voucher_id"] as int;
-    _date = obj["voucher_date"];
-    _time = obj["voucher_time"];
-    _account = obj["voucher_account"];
-    _dealer = obj["voucher_dealer"];
-    _payment = obj["invoice_payment"];
-    _currency = obj["invoice_currency"];
-    _jornal = obj["voucher_jornal"];
-    _discription = obj["voucher_discription"];
-    _class = obj["voucher_class"];
+    _id = int.tryParse(obj["voucher_id"]?.toString() ?? '') ?? 0;
+    _date = obj["voucher_date"]?.toString() ?? '';
+    _time = obj["voucher_time"]?.toString() ?? '';
+    _account = obj["voucher_account"]?.toString() ?? '';
+    _dealer = obj["voucher_dealer"]?.toString() ?? '';
+    _payment = obj["voucher_payment"]?.toString() ?? '0';
+    _currency = obj["voucher_currency"]?.toString() ?? '';
+    _jornal = obj["voucher_journal"]?.toString() ?? '';
+    _discription = obj["voucher_discription"]?.toString() ?? '';
+    _class = obj["voucher_class"]?.toString() ?? '';
   }
 
   VoucherModel.fromMap(Map<String, dynamic> obj) {
-    _id = obj["voucher_id"] as int;
-    _date = obj["voucher_date"];
-    _time = obj["voucher_time"];
-    _account = obj["voucher_account"];
-    _dealer = obj["voucher_dealer"];
-    _payment = obj["invoice_payment"];
-    _currency = obj["invoice_currency"];
-    _jornal = obj["voucher_jornal"];
-    _discription = obj["voucher_discription"];
-    _class = obj["voucher_class"];
+    _id = int.tryParse(obj["voucher_id"]?.toString() ?? '') ?? 0;
+    _date = obj["voucher_date"]?.toString() ?? '';
+    _time = obj["voucher_time"]?.toString() ?? '';
+    _account = obj["voucher_account"]?.toString() ?? '';
+    _dealer = obj["voucher_dealer"]?.toString() ?? '';
+    _payment = obj["voucher_payment"]?.toString() ?? '0';
+    _currency = obj["voucher_currency"]?.toString() ?? '';
+    _jornal = obj["voucher_journal"]?.toString() ?? '';
+    _discription = obj["voucher_discription"]?.toString() ?? '';
+    _class = obj["voucher_class"]?.toString() ?? '';
   }
 
-  Map<String, dynamic> toMap() => {
-        "voucher_id": _id,
-        "voucher_date": _date, // 'التاريخ'
-        "voucher_time": _time, // 'الوقت'
-        "voucher_account": _account,
-        "voucher_dealer": _dealer,
-        "invoice_payment": _payment,
-        "invoice_currency": _currency,
-        "voucher_jornal": _jornal,
-        "voucher_discription": _discription,
-        "voucher_class": _class,
-      };
+  Map<String, dynamic> toMap() {
+    final Map<String, dynamic> map = {
+      "voucher_date": _date,
+      "voucher_time": _time,
+      "voucher_account": _account,
+      "voucher_dealer": _dealer,
+      "invoice_payment": _payment,
+      "invoice_currency": _currency,
+      "voucher_journal": _jornal,
+      "voucher_discription": _discription,
+      "voucher_class": _class,
+    };
+    if (_id != 0) {
+      map["voucher_id"] = _id;
+    }
+    return map;
+  }
 
   int get id => _id;
 

@@ -3,10 +3,11 @@ import '../../model/patients/InvoiceModel.dart';
 import '../dbhelper.dart';
 
 class DbInvoices {
-  final String tableName = 'invoices';
+  final String tableName = 'patient_invoices';
 
   // Create table
-  Future<void> createTable(Database db) async {
+  Future<void> createTable(Database? db) async {
+    if (db == null) return;
     await db.execute('''
       CREATE TABLE IF NOT EXISTS $tableName (
         inv_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,6 +31,7 @@ class DbInvoices {
   Future<int> insertInvoice(InvoiceModel invoice) async {
     try {
       final db = await DbHelper().getDatabase();
+      if (db == null) return -1;
       return await db.insert(tableName, invoice.toMap());
     } catch (e) {
       print('Error inserting invoice: $e');
@@ -41,6 +43,7 @@ class DbInvoices {
   Future<List<InvoiceModel>> getAllInvoices() async {
     try {
       final db = await DbHelper().getDatabase();
+      if (db == null) return [];
       final List<Map<String, dynamic>> maps = await db.query(tableName);
       return maps.map((e) => InvoiceModel.fromMap(e)).toList();
     } catch (e) {
@@ -53,6 +56,7 @@ class DbInvoices {
   Future<List<InvoiceModel>> getInvoicesByPatient(int patientId) async {
     try {
       final db = await DbHelper().getDatabase();
+      if (db == null) return [];
       final List<Map<String, dynamic>> maps = await db.query(
         tableName,
         where: 'inv_patient_id = ?',
@@ -69,6 +73,7 @@ class DbInvoices {
   Future<List<InvoiceModel>> getInvoicesByDoctor(String doctorName) async {
     try {
       final db = await DbHelper().getDatabase();
+      if (db == null) return [];
       final List<Map<String, dynamic>> maps = await db.query(
         tableName,
         where: 'inv_doctor_name = ?',
@@ -85,6 +90,7 @@ class DbInvoices {
   Future<List<InvoiceModel>> getUnpaidInvoices() async {
     try {
       final db = await DbHelper().getDatabase();
+      if (db == null) return [];
       final List<Map<String, dynamic>> maps = await db.query(
         tableName,
         where: 'inv_is_paid = 0',
@@ -100,6 +106,7 @@ class DbInvoices {
   Future<int> updateInvoice(InvoiceModel invoice) async {
     try {
       final db = await DbHelper().getDatabase();
+      if (db == null) return -1;
       return await db.update(
         tableName,
         invoice.toMap(),
@@ -116,6 +123,7 @@ class DbInvoices {
   Future<int> markAsPaid(int invoiceId) async {
     try {
       final db = await DbHelper().getDatabase();
+      if (db == null) return -1;
       return await db.update(
         tableName,
         {'inv_is_paid': 1},
@@ -132,6 +140,7 @@ class DbInvoices {
   Future<int> deleteInvoice(int invoiceId) async {
     try {
       final db = await DbHelper().getDatabase();
+      if (db == null) return -1;
       return await db.delete(
         tableName,
         where: 'inv_id = ?',
@@ -147,6 +156,7 @@ class DbInvoices {
   Future<double> getDoctorTotalEarnings(String doctorName) async {
     try {
       final db = await DbHelper().getDatabase();
+      if (db == null) return 0.0;
       final result = await db.rawQuery(
         'SELECT SUM(inv_treatment_cost) as total FROM $tableName WHERE inv_doctor_name = ? AND inv_is_paid = 1',
         [doctorName],
@@ -165,6 +175,7 @@ class DbInvoices {
   Future<double> getDoctorPendingEarnings(String doctorName) async {
     try {
       final db = await DbHelper().getDatabase();
+      if (db == null) return 0.0;
       final result = await db.rawQuery(
         'SELECT SUM(inv_treatment_cost) as total FROM $tableName WHERE inv_doctor_name = ? AND inv_is_paid = 0',
         [doctorName],

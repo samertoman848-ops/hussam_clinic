@@ -44,7 +44,7 @@ class DbTree {
   Future<List<AccoutingTreeModel>> allPaitentsFromPatients() async {
     Database? db = await dbHelper.openDb();
     String sql =
-        'SELECT patient_id as AT_id, patient_Name as AT_name, patient_id as AT_branch_no, "5200" as AT_father_no, patient_id as AT_branch_originalId FROM patients ORDER BY patient_Name';
+        'SELECT patient_id as AT_id, patient_Name as AT_name, patient_fileNo as AT_branch_no, "5200" as AT_father_no, patient_fileNo as AT_branch_originalId FROM patients ORDER BY patient_Name';
     try {
       final List<Map<String, Object?>> queryResult = await db!.rawQuery(sql);
       return queryResult.map((e) => AccoutingTreeModel.fromMap(e)).toList();

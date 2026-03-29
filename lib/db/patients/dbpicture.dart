@@ -35,8 +35,8 @@ class DbPicture {
 
   Future<void> deletePicture(String patientPicLocation) async {
     Database? db = await dbHelper.openDb();
-    String sql = 'DELETE FROM patient_pic WHERE patient_pic_location="$patientPicLocation"';
-    db!.rawQuery(sql);
+    String sql = 'DELETE FROM patient_pic WHERE patient_pic_location=?';
+    db!.rawQuery(sql, [patientPicLocation]);
   }
 
   Future<List<PictureModel>> searchPictureByPatientId(
@@ -56,7 +56,8 @@ class DbPicture {
   Future<void> addPicture(String patientPicLocation, String patientPicPatientid) async {
     Database? db = await dbHelper.openDb();
     return db!.execute(
-        'INSERT INTO patient_pic (patient_pic_location,patient_pic_patientId) VALUES ("$patientPicLocation","$patientPicPatientid");');
+        'INSERT INTO patient_pic (patient_pic_location,patient_pic_patientId) VALUES (?, ?)',
+        [patientPicLocation, patientPicPatientid]);
   }
 
 }

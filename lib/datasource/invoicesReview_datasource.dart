@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as convert_date;
 import 'package:hussam_clinc/model/accounting/invoices/InvoicesModel.dart';
 import '../db/accounting/invoices/dbinvoices.dart';
+import 'package:hussam_clinc/db/patients/dbpatient.dart';
+import 'package:hussam_clinc/pages/costumer/PageEditCostumers.dart';
 import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
 class InvoicesReviewDataSource extends DataGridSource {
@@ -15,13 +17,21 @@ class InvoicesReviewDataSource extends DataGridSource {
               DataGridCell<int>(columnName: 'id', value: e.id),
               DataGridCell<String>(
                   columnName: 'date',
-                  value:
-                      '${DateTime.parse(e.date).day}/${DateTime.parse(e.date).month}/${DateTime.parse(e.date).year}'),
+                  value: () {
+                    try {
+                      final parsed = DateTime.parse(e.date);
+                      return '${parsed.day}/${parsed.month}/${parsed.year}';
+                    } catch (e) {
+                      return 'N/A';
+                    }
+                  }()),
               DataGridCell<String>(columnName: 'time', value: e.time),
               DataGridCell<String>(
                   columnName: 'account_no', value: e.account_no),
               DataGridCell<String>(
                   columnName: 'account_name', value: e.account_name),
+              DataGridCell<String>(
+                  columnName: 'patient_link', value: e.account_no),
               DataGridCell<String>(columnName: 'jornal', value: e.jornal),
               DataGridCell<String>(columnName: 'amount', value: e.amount),
               DataGridCell<String>(columnName: 'disscount', value: e.disscount),
@@ -85,6 +95,44 @@ class InvoicesReviewDataSource extends DataGridSource {
     return DataGridRowAdapter(
         color: getRowBackgroundColor(),
         cells: row.getCells().map<Widget>((e) {
+          if (e.columnName == 'patient_link') {
+            final idString = e.value.toString();
+            return Builder(builder: (ctx) {
+              return IconButton(
+                icon: const Icon(Icons.person_search, color: Colors.blue),
+                tooltip: 'فتح ملف المريض',
+                onPressed: () async {
+                  final db = DbPatient();
+                  // Try both ID and FileNo
+                  final patientByFile = await db.getPatientByFileNo(idString);
+                  if (patientByFile != null && ctx.mounted) {
+                    Navigator.push(
+                        ctx,
+                        MaterialPageRoute(
+                            builder: (c) => PageEditCostumers(patientByFile, initialIndex: 6)));
+                    return;
+                  }
+
+                  final idInt = int.tryParse(idString);
+                  if (idInt != null) {
+                    final patientById = await db.getPatientById(idInt);
+                    if (patientById != null && ctx.mounted) {
+                      Navigator.push(
+                          ctx,
+                          MaterialPageRoute(
+                              builder: (c) => PageEditCostumers(patientById, initialIndex: 6)));
+                      return;
+                    }
+                  }
+
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                        content: Text('المريض غير موجود أو رقمه غير صحيح')));
+                  }
+                },
+              );
+            });
+          }
           if (e.columnName == '_delete') {
             final id = row.getCells()[0].value.toString();
             return Builder(builder: (cellContext) {

@@ -12,8 +12,14 @@ class ExpenseReviewDataSource extends DataGridSource {
               DataGridCell<int>(columnName: 'id', value: e.id),
               DataGridCell<String>(
                   columnName: 'date',
-                  value:
-                      '${DateTime.parse(e.date).day}/${DateTime.parse(e.date).month}/${DateTime.parse(e.date).year}'),
+                  value: () {
+                    try {
+                      final parsed = DateTime.parse(e.date);
+                      return '${parsed.day}/${parsed.month}/${parsed.year}';
+                    } catch (e) {
+                      return 'N/A';
+                    }
+                  }()),
               DataGridCell<String>(columnName: 'time', value: e.time),
               DataGridCell<String>(
                   columnName: 'account_no', value: e.account_no),

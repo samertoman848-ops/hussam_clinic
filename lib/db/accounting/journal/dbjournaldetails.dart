@@ -57,15 +57,26 @@ class DbJournalDetails {
       String acc_amount,
       ) async {
     Database? db = await dbHelper.openDb();
-    return db!.execute(
-        'INSERT INTO journals_detail (JD_journal_id, JD_account_id, JD_account_name , JD_debit, JD_credit, JD_description,JD_currency,JD_rate,JD_acc_amount) VALUES ("$journal_id","$account_id","$account_name","$debit","$credit","$description","$currency","$rate","$acc_amount");');
+    await db!.insert(
+      'journals_detail',
+      {
+        'JD_journal_id': journal_id,
+        'JD_account_id': account_id,
+        'JD_account_name': account_name,
+        'JD_debit': debit,
+        'JD_credit': credit,
+        'JD_description': description,
+        'JD_currency': currency,
+        'JD_rate': rate,
+        'JD_acc_amount': acc_amount,
+      },
+    );
   }
 
   Future<List<JournalsDetailModel>> searchJournalsDetail(String id) async {
     Database? db = await dbHelper.openDb();
-    String sql = "";
-    sql = 'SELECT * from journals_detail WHERE JD_journal_id=$id ';
-    final List<Map<String, Object?>> queryResult = await  db!.rawQuery(sql);
+    const sql = 'SELECT * from journals_detail WHERE JD_journal_id = ?';
+    final List<Map<String, Object?>> queryResult = await db!.rawQuery(sql, [id]);
     return queryResult.map((e) => JournalsDetailModel.fromMap(e)).toList();
   }
 
@@ -81,10 +92,39 @@ class DbJournalDetails {
       String acc_amount
       ) async {
     Database? db = await dbHelper.openDb();
-    String sql ='UPDATE journals_detail SET JD_journal_id="$journal_id",JD_account_id="$account_id",JD_account_name="$account_name"';
-    sql=sql+' ,JD_debit="$debit" ,JD_credit="$credit" ,JD_description="$description" ,JD_currency="$currency" ';
-     sql=sql+' ,JD_rate="$rate"  ,JD_acc_amount="$acc_amount"  WHERE JD_journal_id="$journal_id"';
-    db!.rawQuery(sql);
+    await db!.update(
+      'journals_detail',
+      {
+        'JD_journal_id': journal_id,
+        'JD_account_id': account_id,
+        'JD_account_name': account_name,
+        'JD_debit': debit,
+        'JD_credit': credit,
+        'JD_description': description,
+        'JD_currency': currency,
+        'JD_rate': rate,
+        'JD_acc_amount': acc_amount,
+      },
+      where: 'JD_journal_id = ?',
+      whereArgs: [journal_id],
+    );
   }
 
+  Future<List<Map<String, dynamic>>> searchJournalsByAccountWithDate(
+      String accountId) async {
+    Database? db = await dbHelper.openDb();
+    String sql = '''
+      SELECT jd.*, j.journal_date, j.journal_time 
+      FROM journals_detail jd
+      LEFT JOIN journals j ON jd.JD_journal_id = j.journal_id
+      WHERE jd.JD_account_id = ?
+    ''';
+    return await db!.rawQuery(sql, [accountId]);
+  }
+
+  Future<void> deleteJournalDetailsByJournalId(String journalId) async {
+    Database? db = await dbHelper.openDb();
+    await db!.delete('journals_detail',
+        where: 'JD_journal_id = ?', whereArgs: [journalId]);
+  }
 }

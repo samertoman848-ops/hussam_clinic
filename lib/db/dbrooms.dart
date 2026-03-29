@@ -44,6 +44,13 @@ class DbRooms {
   }
 
   Future<void> deleteRoom(int id) async {
+    if (kIsWeb) {
+      final snap = await FirebaseFirestore.instance.collection('rooms').where('id', isEqualTo: id).get();
+      for (var doc in snap.docs) {
+        await doc.reference.delete();
+      }
+      return;
+    }
     Database? db = await dbHelper.openDb();
     await db!.delete(
       'rooms',
@@ -69,6 +76,13 @@ class DbRooms {
   }
 
   Future<void> updateRoomName(String oldName, String newName) async {
+    if (kIsWeb) {
+      final snap = await FirebaseFirestore.instance.collection('rooms').where('room_name', isEqualTo: oldName).get();
+      for (var doc in snap.docs) {
+        await doc.reference.update({'room_name': newName});
+      }
+      return;
+    }
     Database? db = await dbHelper.openDb();
     await db!.update(
       'rooms',
@@ -79,6 +93,13 @@ class DbRooms {
   }
 
   Future<void> deleteRoomByName(String roomName) async {
+    if (kIsWeb) {
+      final snap = await FirebaseFirestore.instance.collection('rooms').where('room_name', isEqualTo: roomName).get();
+      for (var doc in snap.docs) {
+        await doc.reference.delete();
+      }
+      return;
+    }
     Database? db = await dbHelper.openDb();
     await db!.delete(
       'rooms',
@@ -88,6 +109,7 @@ class DbRooms {
   }
 
   Future<bool> tableExists() async {
+    if (kIsWeb) return true;
     Database? db = await dbHelper.openDb();
     final result = await db!.rawQuery(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='rooms'",
@@ -96,6 +118,7 @@ class DbRooms {
   }
 
   Future<void> createRoomsTable() async {
+    if (kIsWeb) return;
     Database? db = await dbHelper.openDb();
     try {
       await db!.execute(

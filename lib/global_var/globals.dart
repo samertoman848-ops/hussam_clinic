@@ -8,6 +8,7 @@ import 'package:hussam_clinc/db/accounting/dbtree.dart';
 import 'package:hussam_clinc/db/accounting/journal/dbjournals.dart';
 import 'package:hussam_clinc/db/dbemployee.dart';
 import 'package:hussam_clinc/model/accounting/AccoutingTreeModel.dart';
+import 'package:hussam_clinc/model/accounting/invoices/InvoicesModel.dart';
 import '../db/accounting/invoices/dbinvoices.dart';
 import '../db/patients/dbpatient.dart';
 import '../main.dart';
@@ -19,6 +20,7 @@ import 'package:path/path.dart';
 import 'package:flutter/services.dart' show rootBundle, ByteData;
 
 String _overrideRootPath = "";
+String _overrideDbName = "A-ناصر.db";
 
 // Helper getter for config file path, moved outside appRootPath
 String get _configFilePath {
@@ -45,8 +47,13 @@ set appRootPath(String newPath) {
   _overrideRootPath = newPath;
 }
 
+String get selectedDbName => _overrideDbName;
+set selectedDbName(String newName) {
+  _overrideDbName = newName;
+}
+
 String get extFolder => appRootPath;
-String get extPicFolder => "$appRootPath/pic";
+String get extPicFolder => p.join(appRootPath, 'pic', p.basenameWithoutExtension(selectedDbName));
 String get extDbFolder => "$appRootPath/db";
 String get extFilesFolder => "$appRootPath/files";
 String get extFilesReports => "$appRootPath/reports";
@@ -95,21 +102,19 @@ extension ColorUtil on Color {
 }
 
 Future<void> AllPatientList() async {
-  allPatient.clear();
   DbPatient dbPatient = DbPatient();
   final patients = await dbPatient.allPatients();
+  allPatient.clear();
   allPatient.addAll(patients);
   await dbPatient.MaxFileNo();
 }
 
 Future<void> AllAccountingTreeList() async {
   try {
-    allAccountingTree.clear();
     DbTree dbTree = DbTree();
     final trees = await dbTree.allAccountingTree();
-    for (var tree in trees) {
-      allAccountingTree.add(tree);
-    }
+    allAccountingTree.clear();
+    allAccountingTree.addAll(trees);
   } catch (e) {
     print('Error loading accounting tree: $e');
   }
@@ -132,10 +137,10 @@ Future<void> AllAccountingTreeGroup() async {
 
 Future<void> AllAccountingIndexList() async {
   try {
-    allAccountingIndex.clear();
-    allAccountingIndex_s.clear();
     DbIndex dbIndex = DbIndex();
     final indexes = await dbIndex.allAccountingIndexes();
+    allAccountingIndex.clear();
+    allAccountingIndex_s.clear();
     for (var index in indexes) {
       allAccountingIndex.add(index);
       allAccountingIndex_s.add(index.name);
@@ -147,10 +152,10 @@ Future<void> AllAccountingIndexList() async {
 
 Future<void> AllEmployeeTreeList() async {
   try {
-    allAccountingEmployees.clear();
-    allAccountingEmployees_s.clear();
     DbTree dbTree = DbTree();
     final trees = await dbTree.allEmployeeAccounting();
+    allAccountingEmployees.clear();
+    allAccountingEmployees_s.clear();
     for (var tree in trees) {
       allAccountingEmployees.add(tree);
       if (tree.name.isNotEmpty) {
@@ -164,12 +169,12 @@ Future<void> AllEmployeeTreeList() async {
 
 Future<void> AllPaitentsTreeList() async {
   try {
-    allAccountingCoustmers.clear();
-    allAccountingCoustmers_s.clear();
-
     // جرب تحميل المرضى مباشرة من جدول patients
     DbPatient dbPatient = DbPatient();
     final patients = await dbPatient.allPatients();
+
+    allAccountingCoustmers.clear();
+    allAccountingCoustmers_s.clear();
 
     if (patients.isNotEmpty) {
       // إذا وجدنا المرضى في جدول patients، استخدمها
@@ -177,9 +182,9 @@ Future<void> AllPaitentsTreeList() async {
         AccoutingTreeModel tree = AccoutingTreeModel.Valueed(
           patient.id,
           patient.name,
-          patient.id.toString(),
+          patient.fileNo, // Use fileNo as account number
           '5200', // رقم حساب المرضى في الحسابات
-          patient.id.toString(),
+          patient.fileNo, // Use fileNo as original ID
         );
         allAccountingCoustmers.add(tree);
         if (patient.name.isNotEmpty) {
@@ -209,10 +214,10 @@ Future<void> AllPaitentsTreeList() async {
 
 Future<void> AllSuppliersTreeList() async {
   try {
-    allAccountingSuppliers.clear();
-    allAccountingSuppliers_s.clear();
     DbTree dbTree = DbTree();
     final trees = await dbTree.allSuppliersAccounting();
+    allAccountingSuppliers.clear();
+    allAccountingSuppliers_s.clear();
     for (var tree in trees) {
       allAccountingSuppliers.add(tree);
       if (tree.name.isNotEmpty) {
@@ -225,20 +230,25 @@ Future<void> AllSuppliersTreeList() async {
 }
 
 Future<void> AllEmplyess() async {
-  allEmployees.clear();
   DbEmployee dbEmployee = DbEmployee();
   final employees = await dbEmployee.allEmployeesModel();
+  allEmployees.clear();
   allEmployees.addAll(employees);
 }
 
 Future<void> AllInvioces() async {
   try {
-    allInvoices.clear();
     DbInvoices dbInvoices = DbInvoices();
     final invoices = await dbInvoices.allInvioces();
-    for (var invoice in invoices) {
-      allInvoices.add(invoice);
+
+    // Deduplicate by ID to prevent UI glitches
+    final Map<int, InvoicesModel> unique = {};
+    for (var inv in invoices) {
+      unique[inv.id] = inv;
     }
+
+    allInvoices.clear();
+    allInvoices.addAll(unique.values);
   } catch (e) {
     print('Error loading invoices: $e');
   }
@@ -246,12 +256,16 @@ Future<void> AllInvioces() async {
 
 Future<void> ExpenseInvioces() async {
   try {
-    expenseInvoices.clear();
     DbInvoices dbInvoices = DbInvoices();
     final invoices = await dbInvoices.expenseInvioces();
-    for (var invoice in invoices) {
-      expenseInvoices.add(invoice);
+
+    final Map<int, InvoicesModel> unique = {};
+    for (var inv in invoices) {
+      unique[inv.id] = inv;
     }
+
+    expenseInvoices.clear();
+    expenseInvoices.addAll(unique.values);
   } catch (e) {
     print('Error loading expense invoices: $e');
   }
@@ -259,15 +273,27 @@ Future<void> ExpenseInvioces() async {
 
 Future<void> Journals() async {
   try {
-    allJournals.clear();
     DbJournals dbJournals = DbJournals();
     final journals = await dbJournals.allJournals();
-    for (var journal in journals) {
-      allJournals.add(journal);
-    }
+    allJournals.clear();
+    allJournals.addAll(journals);
   } catch (e) {
     print('Error loading journals: $e');
   }
+}
+
+Future<void> reloadAllData() async {
+  await AllPatientList();
+  await AllAccountingTreeList();
+  await AllAccountingTreeGroup();
+  await AllAccountingIndexList();
+  await AllEmployeeTreeList();
+  await AllPaitentsTreeList();
+  await AllSuppliersTreeList();
+  await AllEmplyess();
+  await AllInvioces();
+  await ExpenseInvioces();
+  await Journals();
 }
 
 // These are now handled by getters above

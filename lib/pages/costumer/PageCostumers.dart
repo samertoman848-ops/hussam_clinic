@@ -7,6 +7,10 @@ import 'package:hussam_clinc/db/patients/dbpatient.dart';
 import 'package:hussam_clinc/pages/costumer/PageAddCostumers.dart';
 import 'package:hussam_clinc/pages/costumer/PageEditCostumers.dart';
 
+import 'package:hussam_clinc/widgets/ClinicSwitcher.dart';
+import 'package:hussam_clinc/global_var/globals.dart';
+import 'package:hussam_clinc/main.dart';
+
 class PageCostumers extends StatefulWidget {
   final List<PatientModel> costumers;
   const PageCostumers(this.costumers, {super.key});
@@ -24,6 +28,15 @@ class _PageCostumersState extends State<PageCostumers> {
   void initState() {
     super.initState();
     displayList = _uniqueById(List.from(widget.costumers));
+  }
+
+  Future<void> _refreshData() async {
+     await AllPatientList();
+     if(mounted) {
+       setState(() {
+         displayList = _uniqueById(List.from(allPatient));
+       });
+     }
   }
 
   void _filterSearch(String query) {
@@ -91,6 +104,13 @@ class _PageCostumersState extends State<PageCostumers> {
       appBar: AppBar(
         title: const Text('قائمة المرضى'),
         actions: [
+          // زر تبديل العيادة السريع
+          ClinicSwitcher(
+            showAsIcon: true,
+            onClinicChanged: () async {
+              await _refreshData();
+            },
+          ),
           IconButton(
             icon: Icon(_isAscending
                 ? Icons.sort_by_alpha
